@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 10px; display: flex; flex-direction: column; height: 100vh; background: #fafafa; }
+    .bar { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    select, button, textarea { font-size: 15px; border-radius: 8px; border: 1px solid #ccc; padding: 8px; }
+    button { background: #1a73e8; color: #fff; border: none; cursor: pointer; }
+    button.secondary { background: #e8eaed; color: #222; }
+    button:disabled { opacity: .5; }
+    #mic { font-size: 20px; padding: 6px 14px; }
+    #mic.listening { background: #d93025; animation: pulse 1s infinite; }
+    @keyframes pulse { 50% { opacity: .6; } }
+    #log { flex: 1; overflow-y: auto; padding: 4px; }
+    .msg { margin: 6px 0; padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; line-height: 1.45; max-width: 92%; }
+    .me { background: #1a73e8; color: #fff; margin-left: auto; }
+    .me img { display: block; max-width: 100%; border-radius: 6px; margin-top: 4px; background: #fff; }
+    .tutor { background: #fff; border: 1px solid #e0e0e0; cursor: pointer; }
+    body.reading .tutor { font-size: 18px; line-height: 1.7; }
+    .err { background: #fde7e7; color: #a00; }
+    .hint { font-size: 12px; color: #666; margin: 2px 4px; }
+    .meta { font-size: 11px; color: #777; margin: -2px 0 6px 4px; display: flex; gap: 8px; align-items: center; }
+    .meta .sonnet { color: #8430ce; font-weight: 600; }
+    .redo { background: none; color: #8430ce; border: 1px solid #8430ce; padding: 2px 8px; font-size: 11px; border-radius: 12px; }
+    .row { display: flex; gap: 6px; margin-top: 8px; }
+    .chips { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0 0; -webkit-overflow-scrolling: touch; }
+    .chip { flex: 0 0 auto; background: #e8f0fe; color: #1a4fb0; border: none; border-radius: 16px; padding: 6px 12px; font-size: 13px; }
+    textarea { flex: 1; resize: none; height: 54px; }
+    #pad { display: none; margin-top: 8px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 6px; }
+    #pad.open { display: block; }
+    #canvas { width: 100%; height: 200px; touch-action: none; display: block; border-radius: 6px;
+      background: #fff repeating-linear-gradient(0deg, transparent 0 49px, #eee 49px 50px); }
+    .padbar { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .padbar button { padding: 6px 10px; font-size: 13px; }
+    #photo { display: none; }
+    #phases { display: none; gap: 3px; margin: 2px 0 6px; }
+    #phases.show { display: flex; }
+    .ph { flex: 1; text-align: center; font-size: 10px; color: #888; padding-top: 5px; border-top: 4px solid #e0e0e0; }
+    .ph.done { border-color: #81c995; color: #34a853; }
+    .ph.now { border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
+    .welcome { background: #fff; border: 1px solid #e0e0e0; border-radius: 14px; padding: 14px; margin: 8px 0; }
+    .welcome h3 { margin: 0 0 4px; font-size: 17px; }
+    .welcome .topic { font-size: 15px; margin: 6px 0 10px; }
+    .welcome ol { margin: 6px 0 12px; padding-left: 20px; font-size: 13px; color: #444; line-height: 1.6; }
+    .welcome .go { width: 100%; font-size: 16px; padding: 12px; border-radius: 10px; }
+    .welcome .sub { font-size: 12px; color: #777; }
+    #micBanner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff8e1;
+      border: 1px solid #f9d77e; border-radius: 10px; padding: 8px 10px; margin: 4px 0 6px; font-size: 13px; }
+    #micBanner.show { display: flex; }
+    #micBanner button { padding: 6px 12px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <select id="lang" onchange="onLangChange()">
+      <option value="zh">🇨🇳 Mandarin</option>
+      <option value="es">🇦🇷 Argentine Spanish</option>
+      <option value="de">🇩🇪 German</option>
+    </select>
+    <select id="level" onchange="onLevelChange()">
+      <option value="beginner">Beginner</option>
+      <option value="intermediate">Intermediate</option>
+      <option value="fluent">Fluent</option>
+    </select>
+    <select id="skill" onchange="onSkillChange()">
+      <option value="guided">⭐ Guided practice</option>
+      <option value="speaking">🗣 Speaking</option>
+      <option value="reading">📖 Reading</option>
+      <option value="writing">✏️ Writing</option>
+    </select>
+    <select id="mode" onchange="onModeChange()">
+      <option value="auto">Auto (Haiku → Sonnet)</option>
+      <option value="haiku">Haiku only</option>
+      <option value="sonnet">Sonnet only</option>
+    </select>
+    <select id="activity"></select>
+    <button onclick="startSession()">Start</button>
+    <button class="secondary" onclick="resetSession()">New</button>
+    <button class="secondary" id="spk" onclick="toggleSpeak()">🔊 On</button>
+    <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Connection settings" style="display:none">⚙</button>
+  </div>
+  <div class="hint" id="hint"></div>
+
+  <div id="micBanner">
+    <span id="micText">🎤 Allow the microphone so you can answer out loud.</span>
+    <button id="micAllow" onclick="requestMic()">Allow microphone</button>
+  </div>
+
+  <div id="phases"></div>
+
+  <div id="log"></div>
+
+  <div class="chips" id="chips"></div>
+
+  <div id="pad">
+    <canvas id="canvas"></canvas>
+    <div class="padbar">
+      <button class="secondary" onclick="clearPad()">🧽 Clear</button>
+      <button class="secondary" onclick="document.getElementById('photo').click()">📷 Photo of paper</button>
+      <button onclick="sendDrawing()">Send handwriting</button>
+    </div>
+    <input type="file" id="photo" accept="image/*" capture="environment" onchange="sendPhoto(this)">
+  </div>
+
+  <div class="row">
+    <button id="mic" onclick="listen()">🎤</button>
+    <button class="secondary" id="padBtn" onclick="togglePad()" style="display:none">✏️</button>
+    <textarea id="input" placeholder="Type or speak…"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
+    <button id="sendBtn" onclick="send()">Send</button>
+  </div>
+
+<script>
+  // ---------- Backend bridge ----------
+  // Works two ways:
+  //  • Inside Google (Sheets sidebar / Apps Script web app): uses google.script.run.
+  //  • As a normal website (GitHub Pages etc.): calls the Apps Script web app over HTTPS,
+  //    which is what lets the microphone work. Asks once for the web app URL and PIN.
+  const IN_GOOGLE = !!(window.google && google.script && google.script.run);
+
+  function getConfig() {
+    let c = {};
+    try { c = JSON.parse(localStorage.getItem('tutorConfig') || '{}'); } catch (e) {}
+    return c;
+  }
+
+  function setupConnection(force) {
+    let c = getConfig();
+    if (!force && c.url && c.pin) return c;
+    const url = prompt('Paste your Apps Script Web app URL (ends with /exec):', c.url || '');
+    if (!url) return c;
+    const pin = prompt('Enter the PIN you saved as APP_TOKEN in Script properties:', c.pin || '');
+    if (!pin) return c;
+    c = { url: url.trim(), pin: pin.trim() };
+    try { localStorage.setItem('tutorConfig', JSON.stringify(c)); } catch (e) {}
+    return c;
+  }
+
+  function call(fn, ...args) {
+    if (IN_GOOGLE) {
+      return new Promise((resolve, reject) =>
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
+    }
+    const c = setupConnection(false);
+    if (!c.url || !c.pin) return Promise.reject(new Error('Not connected — tap ⚙ to enter your web app URL and PIN.'));
+    return fetch(c.url, {
+      method: 'POST',
+      // text/plain avoids a CORS pre-flight, which Apps Script can't answer
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ pin: c.pin, fn: fn, args: args })
+    })
+      .then(r => r.text())
+      .then(t => {
+        let d;
+        try { d = JSON.parse(t); }
+        catch (e) { throw new Error('Unexpected reply from Apps Script. Check the URL and that access is set to "Anyone".'); }
+        if (d.error) throw new Error(d.error);
+        return d.result;
+      });
+  }
+
+  function showApiError(err) {
+    const s = state[lang()];
+    s.view.push({ who: 'err', text: 'Connection problem: ' + err.message });
+    render();
+  }
+
+  function reconnect() {
+    setupConnection(true);
+    location.reload();
+  }
+  const LOCALES = { zh: 'zh-CN', es: 'es-AR', de: 'de-DE' };
+  const VOICE_PREFS = { zh: ['zh-CN', 'zh'], es: ['es-AR', 'es-US', 'es-419', 'es-MX', 'es'], de: ['de-DE', 'de-AT', 'de-CH', 'de'] };
+  const state = { zh: { messages: [], view: [] }, es: { messages: [], view: [] }, de: { messages: [], view: [] } };
+  let speakOn = true;
+  let rateFactor = 1; // lowered by the "Slower" button, reset by "New"
+  let levels = { zh: 'beginner', es: 'beginner', de: 'beginner' };
+  let mode = 'auto';
+  let skill = 'guided';
+  const PHASES = ['Warm-up', 'Listen', 'Shadow', 'Speak', 'Read', 'Write', 'Wrap-up'];
+  const lang = () => document.getElementById('lang').value;
+
+  // ---------- Per-skill activities and quick replies ----------
+
+  const ACTIVITIES = {
+    guided:   [['', "Today's plan"]],
+    speaking: [['', 'Any activity'], ['Story asking', '📖 Story'], ['Role-play', '🎭 Role-play'],
+               ['Shadowing', '🗣 Shadowing'], ['Picture talk', '🖼 Picture talk'], ['Daily chat', '☕ Daily chat']],
+    reading:  [['', 'Any activity'], ['Graded story', '📚 Graded story'], ['Dialogue to read', '💬 Dialogue'],
+               ['Real-world text', '🧾 Menu / sign / message'], ['News-lite', '📰 News-lite']],
+    writing:  [['', 'Any activity'], ['Dictation', '🎧 Dictation'], ['Sentence building', '🧱 Sentence building'],
+               ['Reply to a message', '📱 Reply to a message'], ['Mini diary', '📓 Mini diary'],
+               ['Character practice', '字 Character practice', 'zh']]
+  };
+
+  const CHIPS = {
+    guided:   [['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
+               ['💬 Help me say it', 'Help me say it'], ['➡ Next step', 'Next']],
+    speaking: [['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
+               ['💬 Help me say it', 'Help me say it'], ['➡ Next', 'Next']],
+    reading:  [['📄 New passage', 'New passage'], ['❓ Meaning', 'What does that mean?'], ['🔤 Pinyin', 'Pinyin', 'zh'],
+               ['🔊 Read it to me', 'Read it to me'], ['➡ Next', 'Next']],
+    writing:  [['📝 New task', 'New task'], ['💡 Hint', 'Hint'], ['✅ Check', 'Check'],
+               ['👀 Show me', 'Show me'], ['➡ Next', 'Next']]
+  };
+
+  const HINTS = {
+    guided: 'One topic, 7 short steps: listen → shadow → speak → read → write. Answer out loud with 🎤.',
+    speaking: 'Listen, then answer out loud with 🎤. Tap a message to hear it again.',
+    reading: 'Read the passage, then answer the questions. Bold = new words.',
+    writing: 'Type your answer, or tap ✏️ to handwrite (great for Chinese characters).'
+  };
+
+  function buildSkillUI() {
+    const l = lang();
+    document.body.classList.toggle('reading', skill === 'reading');
+    document.getElementById('hint').textContent = HINTS[skill];
+
+    const act = document.getElementById('activity');
+    act.innerHTML = '';
+    ACTIVITIES[skill].filter(a => !a[2] || a[2] === l).forEach(a => {
+      const o = document.createElement('option');
+      o.value = a[0]; o.textContent = a[1];
+      act.appendChild(o);
+    });
+
+    const chips = document.getElementById('chips');
+    chips.innerHTML = '';
+    CHIPS[skill].filter(c => !c[2] || c[2] === l).forEach(c => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.textContent = c[0];
+      b.onclick = () => quick(c[1]);
+      chips.appendChild(b);
+    });
+
+    document.getElementById('padBtn').style.display = (skill === 'writing' || skill === 'guided') ? '' : 'none';
+    if (skill !== 'writing' && skill !== 'guided') document.getElementById('pad').classList.remove('open');
+    act.style.display = skill === 'guided' ? 'none' : '';
+    renderPhases();
+    if (!state[l].view.length) render(); // refresh the welcome card
+  }
+
+  // ---------- Guided practice: welcome card + phase bar ----------
+
+  let plan = {};      // today's plan per language, from the server
+  let phase = {};     // current phase number per language
+
+  function loadPlan() {
+    const l = lang();
+    call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; if (!state[l].view.length) render(); }).catch(showApiError);
+  }
+
+  function renderPhases() {
+    const bar = document.getElementById('phases');
+    const n = phase[lang()] || 0;
+    bar.classList.toggle('show', skill === 'guided' && n > 0);
+    bar.innerHTML = PHASES.map((p, i) =>
+      '<div class="ph ' + (i + 1 < n ? 'done' : i + 1 === n ? 'now' : '') + '">' + p + '</div>').join('');
+  }
+
+  // Pull "[Phase N/7: Name]" off the reply, update the bar, and return the text without it.
+  function takePhase(text, l) {
+    const m = text.match(/^\s*\[Phase (\d)\/7:[^\]]*\]\s*/);
+    if (!m) return text;
+    phase[l] = Number(m[1]);
+    renderPhases();
+    return text.slice(m[0].length);
+  }
+
+  function welcomeCard() {
+    const l = lang();
+    const p = plan[l];
+    const div = document.createElement('div');
+    div.className = 'welcome';
+    const name = { zh: 'Mandarin', es: 'Argentine Spanish', de: 'German' }[l];
+    if (skill === 'guided') {
+      div.innerHTML =
+        '<h3>⭐ Today\'s guided practice</h3>' +
+        '<div class="sub">' + name + ' · ' + (levels[l] || 'beginner') + ' · about 20 minutes</div>' +
+        '<div class="topic">' + (p ? '<b>Topic ' + p.topicNumber + '/' + p.topicCount + ':</b> ' + escapeHtml(p.topic) +
+          (p.sessionOnTopic > 1 ? ' <span class="sub">(session ' + p.sessionOnTopic + ' — a new story)</span>' : '') +
+          (p.dueWords ? '<br><span class="sub">' + p.dueWords + ' words due for review</span>' : '')
+          : 'Loading today\'s topic…') + '</div>' +
+        '<ol><li>Warm-up — recall words from before</li><li>Listen — a short story you mostly understand</li>' +
+        '<li>Shadow — repeat key sentences aloud</li><li>Speak — retell it and talk about you</li>' +
+        '<li>Read — the same story as text</li><li>Write — dictation + your own sentences</li>' +
+        '<li>Wrap-up — 30-second speaking challenge</li></ol>';
+      const b = document.createElement('button');
+      b.className = 'go';
+      b.textContent = '▶ Start guided practice';
+      b.onclick = startSession;
+      div.appendChild(b);
+    } else {
+      div.innerHTML = '<h3>' + name + ' · ' + skill + '</h3><div class="sub">Pick an activity above (or leave "Any") and tap Start.</div>';
+    }
+    return div;
+  }
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  // ---------- Saved settings ----------
+
+  call('getLevels').then(l => { levels = Object.assign({ zh: 'beginner', es: 'beginner', de: 'beginner' }, l); syncLevel(); loadPlan(); }).catch(showApiError);
+  call('getMode').then(m => { mode = m; document.getElementById('mode').value = m; }).catch(() => {});
+  call('getSkill').then(s => { skill = s; document.getElementById('skill').value = s; buildSkillUI(); }).catch(() => {});
+  buildSkillUI();
+  if (!IN_GOOGLE) document.getElementById('cfgBtn').style.display = '';
+
+  function syncLevel() { document.getElementById('level').value = levels[lang()]; }
+
+  function onLangChange() { syncLevel(); buildSkillUI(); render(); if (!plan[lang()]) loadPlan(); }
+
+  function onLevelChange() {
+    const l = lang();
+    levels[l] = document.getElementById('level').value;
+    call('saveLevel', l, levels[l]).catch(showApiError);
+    plan[l] = null;
+    loadPlan();
+  }
+
+  function onModeChange() {
+    mode = document.getElementById('mode').value;
+    call('saveMode', mode).catch(showApiError);
+  }
+
+  function onSkillChange() {
+    skill = document.getElementById('skill').value;
+    call('saveSkill', skill).catch(showApiError);
+    buildSkillUI();
+  }
+
+  // ---------- Chat ----------
+
+  function render() {
+    const log = document.getElementById('log');
+    log.innerHTML = '';
+    const view = state[lang()].view;
+    if (!view.length) { log.appendChild(welcomeCard()); return; }
+    view.forEach((m, i) => {
+      const d = document.createElement('div');
+      d.className = 'msg ' + m.who;
+      d.textContent = m.text;
+      if (m.img) {
+        const im = document.createElement('img');
+        im.src = m.img;
+        d.appendChild(im);
+      }
+      if (m.who === 'tutor') d.onclick = () => speak(m.text, lang(), true);
+      log.appendChild(d);
+
+      if (m.who === 'tutor' && m.model) {
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        const tag = document.createElement('span');
+        if (m.model === 'sonnet') {
+          tag.className = 'sonnet';
+          tag.textContent = m.escalated ? '⬆ Sonnet — ' + m.escalated : 'Sonnet';
+        } else {
+          tag.textContent = 'Haiku';
+        }
+        meta.appendChild(tag);
+        if (m.model === 'haiku' && i === view.length - 1) {
+          const b = document.createElement('button');
+          b.className = 'redo';
+          b.textContent = 'Redo with Sonnet';
+          b.onclick = redoWithSonnet;
+          meta.appendChild(b);
+        }
+        log.appendChild(meta);
+      }
+    });
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function resetSession() {
+    speechSynthesis.cancel();
+    rateFactor = 1;
+    state[lang()] = { messages: [], view: [] };
+    phase[lang()] = 0;
+    renderPhases();
+    render();
+  }
+
+  function startSession() {
+    resetSession();
+    const act = document.getElementById('activity').value;
+    sendText(skill === 'guided'
+      ? "Let's start today's guided practice."
+      : "Let's start today's " + skill + " session." + (act ? ' Activity: ' + act + '.' : ''));
+  }
+
+  function quick(text) {
+    if (document.getElementById('sendBtn').disabled) return;
+    if (!state[lang()].messages.length) { startSession(); return; }
+    if (text === 'Slower please') rateFactor = Math.max(0.6, rateFactor - 0.1); // slow the voice too
+    sendText(text);
+  }
+
+  function send() {
+    const box = document.getElementById('input');
+    const text = box.value.trim();
+    if (!text) return;
+    box.value = '';
+    sendText(text);
+  }
+
+  function sendText(text) {
+    const s = state[lang()];
+    s.messages.push({ role: 'user', content: text });
+    s.view.push({ who: 'me', text: text });
+    runTurn(lang(), mode);
+  }
+
+  // A message the learner sent (text or image) — not a tool result.
+  function isHumanTurn(m) {
+    if (m.role !== 'user') return false;
+    if (typeof m.content === 'string') return true;
+    return Array.isArray(m.content) && !m.content.some(b => b.type === 'tool_result');
+  }
+
+  // Keep only the newest handwriting image in what we send, so old images don't cost tokens every turn.
+  function payloadMessages(msgs) {
+    let keptOne = false;
+    const out = [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (isHumanTurn(m) && Array.isArray(m.content) && m.content.some(b => b.type === 'image')) {
+        if (keptOne) {
+          const txt = m.content.filter(b => b.type === 'text').map(b => b.text).join(' ');
+          out.unshift({ role: 'user', content: txt + ' (earlier image removed)' });
+          continue;
+        }
+        keptOne = true;
+      }
+      out.unshift(m);
+    }
+    return out;
+  }
+
+  function runTurn(l, useMode) {
+    const s = state[l];
+    s.view.push({ who: 'tutor', text: '…' });
+    render();
+    setBusy(true);
+
+    const sent = payloadMessages(s.messages);
+    call('chat', l, levels[l], useMode, skill, sent)
+      .then(res => {
+        // Server returns the history it was sent plus the new turns; append only the new part.
+        const added = res.messages.slice(sent.length);
+        s.messages = s.messages.concat(added);
+        const shown = takePhase(res.text, l);
+        s.view[s.view.length - 1] = { who: 'tutor', text: shown, model: res.model, escalated: res.escalated };
+        if (phase[l] === 7) { plan[l] = null; call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; }).catch(() => {}); }
+        setBusy(false);
+        render();
+        speak(res.text, l, false);
+      })
+      .catch(err => {
+        // Drop the learner's unanswered turn so history stays valid
+        if (s.messages.length && isHumanTurn(s.messages[s.messages.length - 1])) s.messages.pop();
+        s.view[s.view.length - 1] = { who: 'err', text: 'Error: ' + err.message };
+        setBusy(false);
+        render();
+      });
+  }
+
+  function redoWithSonnet(e) {
+    if (e) e.stopPropagation();
+    const l = lang();
+    const s = state[l];
+    let idx = -1;
+    for (let i = s.messages.length - 1; i >= 0; i--) {
+      if (isHumanTurn(s.messages[i])) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    s.messages = s.messages.slice(0, idx + 1);
+    s.view.pop();
+    speechSynthesis.cancel();
+    runTurn(l, 'sonnet');
+  }
+
+  function setBusy(b) {
+    document.getElementById('sendBtn').disabled = b;
+    document.getElementById('mic').disabled = b;
+  }
+
+  // ---------- Handwriting pad ----------
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let drawing = false, hasInk = false;
+
+  function sizeCanvas() {
+    const r = canvas.getBoundingClientRect();
+    if (!r.width) return;
+    canvas.width = Math.round(r.width * 2);
+    canvas.height = Math.round(r.height * 2);
+    ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+    hasInk = false;
+  }
+
+  function togglePad() {
+    const pad = document.getElementById('pad');
+    pad.classList.toggle('open');
+    if (pad.classList.contains('open')) sizeCanvas();
+  }
+
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    return [(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height];
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    drawing = true; canvas.setPointerCapture(e.pointerId);
+    const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); hasInk = true;
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => canvas.addEventListener(t, () => { drawing = false; }));
+
+  function clearPad() { ctx.clearRect(0, 0, canvas.width, canvas.height); hasInk = false; }
+
+  // Flatten onto white and return a data URL (the canvas is transparent by default).
+  function padImage() {
+    const c = document.createElement('canvas');
+    c.width = canvas.width; c.height = canvas.height;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(canvas, 0, 0);
+    return c.toDataURL('image/png');
+  }
+
+  function sendDrawing() {
+    if (!hasInk) { alert('Write something on the pad first.'); return; }
+    if (document.getElementById('sendBtn').disabled) return;
+    sendImage(padImage(), 'image/png');
+    clearPad();
+  }
+
+  function sendPhoto(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        // Shrink to max 1000px so the image stays cheap in tokens
+        const scale = Math.min(1, 1000 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        sendImage(c.toDataURL('image/jpeg', 0.8), 'image/jpeg');
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function sendImage(dataUrl, mediaType) {
+    const box = document.getElementById('input');
+    const note = box.value.trim();
+    box.value = '';
+    const text = '[handwriting] ' + (note || 'Here is what I wrote. Please check it.');
+    const s = state[lang()];
+    s.messages.push({ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: dataUrl.split(',')[1] } },
+      { type: 'text', text: text }
+    ]});
+    s.view.push({ who: 'me', text: note || '✏️ Handwriting', img: dataUrl });
+    runTurn(lang(), mode);
+  }
+
+  // ---------- Text-to-speech ----------
+
+  function toggleSpeak() {
+    speakOn = !speakOn;
+    document.getElementById('spk').textContent = speakOn ? '🔊 On' : '🔇 Off';
+    if (!speakOn) speechSynthesis.cancel();
+  }
+
+  function pickVoice(l) {
+    const voices = speechSynthesis.getVoices();
+    for (const p of VOICE_PREFS[l]) {
+      const v = voices.find(v => v.lang.replace('_', '-').startsWith(p));
+      if (v) return v;
+    }
+    return null;
+  }
+
+  function speak(text, l, force) {
+    if (!('speechSynthesis' in window)) return;
+    if (!speakOn && !force) return;
+    const parts = [...text.matchAll(/«([^»]+)»/g)].map(m => m[1].trim()).filter(Boolean);
+    if (!parts.length) return;
+    speechSynthesis.cancel();
+    const voice = pickVoice(l);
+    parts.forEach(p => {
+      const u = new SpeechSynthesisUtterance(p);
+      u.lang = LOCALES[l];
+      if (voice) u.voice = voice;
+      u.rate = ({ zh: 0.75, es: 0.9, de: 0.85 }[l] || 0.9) * rateFactor; // slower for tones / long words
+      speechSynthesis.speak(u);
+    });
+  }
+
+  if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
+
+  // ---------- Microphone permission ----------
+
+  let micReady = false;
+  const FALLBACK = ' You can still speak: tap the 🎤 key on your phone keyboard while typing in the box.';
+
+  function micBanner(text, showButton) {
+    document.getElementById('micText').textContent = text;
+    document.getElementById('micAllow').style.display = showButton ? '' : 'none';
+    document.getElementById('micBanner').classList.add('show');
+  }
+  function hideMicBanner() { document.getElementById('micBanner').classList.remove('show'); }
+
+  // The page is blocked from the mic entirely (e.g. the hosting frame doesn't allow it).
+  function micBlockedByPage() {
+    const fp = document.permissionsPolicy || document.featurePolicy;
+    return !!(fp && fp.allowsFeature && !fp.allowsFeature('microphone'));
+  }
+
+  // Check on load and show the banner if permission hasn't been given yet.
+  async function checkMic() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      micBanner('This browser can\'t use the microphone here. Open the tutor link in Chrome.' + FALLBACK, false);
+      return;
+    }
+    if (micBlockedByPage()) {
+      micBanner('The microphone is blocked inside this window.' + FALLBACK, false);
+      return;
+    }
+    try {
+      const st = await navigator.permissions.query({ name: 'microphone' });
+      const apply = () => {
+        if (st.state === 'granted') { micReady = true; hideMicBanner(); }
+        else if (st.state === 'denied') {
+          micReady = false;
+          micBanner('Microphone is turned off for this site. Tap the 🔒 icon next to the address bar → Permissions → Microphone → Allow, then reload.' + FALLBACK, false);
+        } else { micReady = false; micBanner('🎤 Allow the microphone so you can answer out loud.', true); }
+      };
+      apply();
+      st.onchange = apply;
+    } catch (e) {
+      // Permissions API not supported (some Safari versions): just offer the button.
+      micBanner('🎤 Allow the microphone so you can answer out loud.', true);
+    }
+  }
+
+  // Ask the browser for the mic. This makes Chrome show its "Allow" pop-up.
+  async function requestMic() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop()); // we only needed the permission
+      micReady = true;
+      hideMicBanner();
+      return true;
+    } catch (e) {
+      micReady = false;
+      if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
+        micBanner(micBlockedByPage()
+          ? 'The microphone is blocked inside this window.' + FALLBACK
+          : 'Microphone was not allowed. Tap the 🔒 icon next to the address bar → Permissions → Microphone → Allow, then reload.' + FALLBACK, false);
+      } else if (e.name === 'NotFoundError') {
+        micBanner('No microphone found on this device.' + FALLBACK, false);
+      } else {
+        micBanner('Couldn\'t start the microphone (' + e.name + ').' + FALLBACK, false);
+      }
+      return false;
+    }
+  }
+
+  checkMic();
+
+  // ---------- Speech-to-text ----------
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  async function listen() {
+    if (!SR) {
+      alert('Speech recognition is not available in this browser. Use Chrome, or the mic key on your phone keyboard.');
+      return;
+    }
+    if (!micReady && !(await requestMic())) return; // first tap asks for permission automatically
+    speechSynthesis.cancel();
+    const mic = document.getElementById('mic');
+    const r = new SR();
+    r.lang = LOCALES[lang()];
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+
+    r.onstart = () => mic.classList.add('listening');
+    r.onend = () => mic.classList.remove('listening');
+    r.onerror = e => {
+      mic.classList.remove('listening');
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        micReady = false;
+        checkMic();
+        return;
+      }
+      const msg = e.error === 'no-speech'
+        ? 'Didn\'t hear anything. Tap 🎤 and speak right away.'
+        : 'Didn\'t catch that (' + e.error + '). Try again.';
+      state[lang()].view.push({ who: 'err', text: msg });
+      render();
+    };
+    r.onresult = e => {
+      const heard = e.results[0][0].transcript;
+      sendText('[voice] ' + heard);
+    };
+    r.start();
+  }
+</script>
+</body>
+</html>
