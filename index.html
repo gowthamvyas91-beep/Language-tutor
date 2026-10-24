@@ -197,9 +197,9 @@
   };
 
   const CHIPS = {
-    guided:   [['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
+    guided:   [['🐇 Faster voice', '__faster'], ['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
                ['💬 Help me say it', 'Help me say it'], ['➡ Next step', 'Next']],
-    speaking: [['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
+    speaking: [['🐇 Faster voice', '__faster'], ['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
                ['💬 Help me say it', 'Help me say it'], ['➡ Next', 'Next']],
     reading:  [['📄 New passage', 'New passage'], ['❓ Meaning', 'What does that mean?'], ['🔤 Pinyin', 'Pinyin', 'zh'],
                ['🔊 Read it to me', 'Read it to me'], ['➡ Next', 'Next']],
@@ -208,8 +208,8 @@
   };
 
   const HINTS = {
-    guided: 'One topic, 7 short steps: listen → shadow → speak → read → write. Answer out loud with 🎤.',
-    speaking: 'Listen, then answer out loud with 🎤. Tap a message to hear it again.',
+    guided: 'One topic, 7 short steps. Tap 🎤, speak, and it sends when you pause (tap ⏹ to send sooner).',
+    speaking: 'Tap 🎤 and speak; it sends when you pause (tap ⏹ to send sooner). Tap a message to hear it again.',
     reading: 'Read the passage, then answer the questions. Bold = new words.',
     writing: 'Type your answer, or tap ✏️ to handwrite (great for Chinese characters).'
   };
@@ -358,9 +358,9 @@
         const tag = document.createElement('span');
         if (m.model === 'sonnet') {
           tag.className = 'sonnet';
-          tag.textContent = m.escalated ? '⬆ Sonnet — ' + m.escalated : 'Sonnet';
+          tag.textContent = (m.escalated ? '⬆ Sonnet — ' + m.escalated : 'Sonnet') + (m.secs ? ' · ' + m.secs + 's' : '');
         } else {
-          tag.textContent = 'Haiku';
+          tag.textContent = 'Haiku' + (m.secs ? ' · ' + m.secs + 's' : '');
         }
         meta.appendChild(tag);
         if (m.model === 'haiku' && i === view.length - 1) {
@@ -394,6 +394,12 @@
   }
 
   function quick(text) {
+    if (text === '__faster') { // only changes the playback speed
+      rateFactor = Math.min(1.6, rateFactor + 0.15);
+      const v = state[lang()].view;
+      for (let i = v.length - 1; i >= 0; i--) if (v[i].who === 'tutor') { speak(v[i].text, lang(), true); break; }
+      return;
+    }
     if (document.getElementById('sendBtn').disabled) return;
     if (!state[lang()].messages.length) { startSession(); return; }
     if (text === 'Slower please') rateFactor = Math.max(0.6, rateFactor - 0.1); // slow the voice too
@@ -448,17 +454,22 @@
     setBusy(true);
 
     const sent = payloadMessages(s.messages);
+    const t0 = Date.now();
     call('chat', l, levels[l], useMode, skill, sent)
       .then(res => {
         // Server returns the history it was sent plus the new turns; append only the new part.
         const added = res.messages.slice(sent.length);
         s.messages = s.messages.concat(added);
         const shown = takePhase(res.text, l);
-        s.view[s.view.length - 1] = { who: 'tutor', text: shown, model: res.model, escalated: res.escalated };
-        if (phase[l] === 7) { plan[l] = null; call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; }).catch(() => {}); }
+        s.view[s.view.length - 1] = { who: 'tutor', text: shown, model: res.model, escalated: res.escalated,
+          secs: ((Date.now() - t0) / 1000).toFixed(1) };
         setBusy(false);
         render();
-        speak(res.text, l, false);
+        speak(shown, l, false); // speak first — saving happens in the background below
+        const wrapUp = phase[l] === 7;
+        const refreshPlan = () => { if (wrapUp) { plan[l] = null; call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; }).catch(() => {}); } };
+        if (res.log) call('saveLog', l, levels[l], res.log).then(refreshPlan).catch(() => {});
+        else refreshPlan();
       })
       .catch(err => {
         // Drop the learner's unanswered turn so history stays valid
@@ -687,7 +698,11 @@
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+  const SILENCE_MS = 1200; // send this long after you stop talking
+  let rec = null;
+
   async function listen() {
+    if (rec) { rec.stop(); return; } // tap again while listening = send now
     if (!SR) {
       alert('Speech recognition is not available in this browser. Use Chrome, or the mic key on your phone keyboard.');
       return;
@@ -695,29 +710,56 @@
     if (!micReady && !(await requestMic())) return; // first tap asks for permission automatically
     speechSynthesis.cancel();
     const mic = document.getElementById('mic');
+    const box = document.getElementById('input');
     const r = new SR();
+    rec = r;
     r.lang = LOCALES[lang()];
-    r.interimResults = false;
+    r.interimResults = true;  // show words as you speak
+    r.continuous = false;
     r.maxAlternatives = 1;
 
-    r.onstart = () => mic.classList.add('listening');
-    r.onend = () => mic.classList.remove('listening');
-    r.onerror = e => {
+    let heard = '', gotResult = false, done = false, timer = null;
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
       mic.classList.remove('listening');
+      mic.textContent = '🎤';
+      rec = null;
+      const t = gotResult ? heard.trim() : '';
+      if (gotResult) box.value = '';
+      if (t) sendText('[voice] ' + t);
+    };
+
+    r.onstart = () => { mic.classList.add('listening'); mic.textContent = '⏹'; };
+    r.onresult = e => {
+      gotResult = true;
+      let text = '';
+      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+      heard = text;
+      box.value = text;
+      clearTimeout(timer);
+      timer = setTimeout(() => { try { r.stop(); } catch (x) {} }, SILENCE_MS);
+      const last = e.results[e.results.length - 1];
+      if (last.isFinal) finish(); // the browser decided you're done: send immediately
+    };
+    r.onend = finish;
+    r.onerror = e => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         micReady = false;
+        done = true; mic.classList.remove('listening'); mic.textContent = '🎤'; rec = null;
         checkMic();
         return;
       }
-      const msg = e.error === 'no-speech'
-        ? 'Didn\'t hear anything. Tap 🎤 and speak right away.'
-        : 'Didn\'t catch that (' + e.error + '). Try again.';
-      state[lang()].view.push({ who: 'err', text: msg });
-      render();
-    };
-    r.onresult = e => {
-      const heard = e.results[0][0].transcript;
-      sendText('[voice] ' + heard);
+      if (e.error === 'aborted') return;
+      if (!gotResult) {
+        const msg = e.error === 'no-speech'
+          ? 'Didn\'t hear anything. Tap 🎤 and speak right away.'
+          : 'Didn\'t catch that (' + e.error + '). Try again.';
+        state[lang()].view.push({ who: 'err', text: msg });
+        render();
+      }
     };
     r.start();
   }
