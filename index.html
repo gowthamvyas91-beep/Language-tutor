@@ -60,6 +60,7 @@
     .txt { width: 100%; font-size: 16px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 8px; }
     .loginerr { background: #fde7e7; color: #a00; border-radius: 8px; padding: 8px; margin-top: 8px; font-size: 13px; }
     details { margin: 4px 0 10px; }
+    .resume { font-size: 12px; color: #555; background: #eef3fd; border-radius: 8px; padding: 6px 10px; margin: 4px 0; }
     #micBanner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff8e1;
       border: 1px solid #f9d77e; border-radius: 10px; padding: 8px 10px; margin: 4px 0 6px; font-size: 13px; }
     #micBanner.show { display: flex; }
@@ -275,6 +276,60 @@
   const PHASES = ['Warm-up', 'Listen', 'Shadow', 'Speak', 'Read', 'Write', 'Wrap-up'];
   const lang = () => document.getElementById('lang').value;
 
+  // ---------- Resume: the session in progress is kept on this device ----------
+  // (Level, topic, vocab and reviews are saved on the server; this keeps the conversation itself,
+  //  so closing the page or switching language continues where you left off.)
+  const KEEP_DAYS = 3;
+
+  function storeKey(l) {
+    const who = IN_GOOGLE ? 'owner' : (getConfig().code || 'anon');
+    return 'tutorSession_' + who + '_' + l;
+  }
+
+  function noImages(msgs) {
+    return msgs.map(m => (Array.isArray(m.content) && m.content.some(b => b.type === 'image'))
+      ? { role: m.role, content: m.content.filter(b => b.type !== 'image').concat([{ type: 'text', text: '(handwriting image not kept)' }]) }
+      : m);
+  }
+
+  function saveLocal(l) {
+    const s = state[l];
+    try {
+      if (!s.messages.length) { localStorage.removeItem(storeKey(l)); return; }
+      localStorage.setItem(storeKey(l), JSON.stringify({
+        savedAt: Date.now(), skill: s.skill || skill,
+        messages: noImages(s.messages),
+        view: s.view.filter(v => v.text !== '…').map(v => v.img ? Object.assign({}, v, { img: null, text: v.text || '✏️ Handwriting' }) : v),
+        phase: phase[l] || 0, completed: !!completed[l]
+      }));
+    } catch (e) { /* storage full or blocked: resume just won't be available */ }
+  }
+
+  function restoreLocal() {
+    ['zh', 'es', 'de'].forEach(l => {
+      try {
+        const d = JSON.parse(localStorage.getItem(storeKey(l)) || 'null');
+        if (!d || !d.messages || !d.messages.length) return;
+        if (Date.now() - d.savedAt > KEEP_DAYS * 86400000) { localStorage.removeItem(storeKey(l)); return; }
+        state[l] = { messages: d.messages, view: d.view || [], skill: d.skill, resumedAt: d.savedAt };
+        phase[l] = d.phase || 0;
+        completed[l] = !!d.completed;
+      } catch (e) {}
+    });
+  }
+
+  // A resumed session belongs to the skill it was started in.
+  function matchSessionSkill() {
+    const s = state[lang()];
+    if (s && s.messages.length && s.skill && s.skill !== skill) {
+      skill = s.skill;
+      document.getElementById('skill').value = skill;
+      buildSkillUI();
+    }
+  }
+
+  function rememberLang() { try { localStorage.setItem('tutorLang', lang()); } catch (e) {} }
+
   // ---------- Per-skill activities and quick replies ----------
 
   const ACTIVITIES = {
@@ -465,6 +520,10 @@
   let me = null; // the signed-in learner
 
   function startApp() {
+    try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
+    restoreLocal();
+    renderPhases();
+    render();
     call('whoAmI').then(w => {
       me = w;
       const chip = document.getElementById('who');
@@ -478,7 +537,7 @@
       }
       call('getLevels').then(l => { levels = Object.assign({ zh: 'beginner', es: 'beginner', de: 'beginner' }, l); syncLevel(); loadPlan(); }).catch(showApiError);
       call('getMode').then(m => { mode = m; document.getElementById('mode').value = m; }).catch(() => {});
-      call('getSkill').then(s => { skill = s; document.getElementById('skill').value = s; buildSkillUI(); }).catch(() => {});
+      call('getSkill').then(s => { skill = s; document.getElementById('skill').value = s; buildSkillUI(); matchSessionSkill(); render(); }).catch(() => {});
     }).catch(showApiError);
   }
 
@@ -488,7 +547,7 @@
 
   function syncLevel() { document.getElementById('level').value = levels[lang()]; }
 
-  function onLangChange() { syncLevel(); buildSkillUI(); render(); if (!plan[lang()]) loadPlan(); }
+  function onLangChange() { rememberLang(); syncLevel(); buildSkillUI(); matchSessionSkill(); renderPhases(); render(); if (!plan[lang()]) loadPlan(); }
 
   function onLevelChange() {
     const l = lang();
@@ -504,7 +563,17 @@
   }
 
   function onSkillChange() {
-    skill = document.getElementById('skill').value;
+    const next = document.getElementById('skill').value;
+    const s = state[lang()];
+    if (s.messages.length && s.skill && s.skill !== next) {
+      if (!confirm('Switching skill ends the session in progress. Continue?')) {
+        document.getElementById('skill').value = skill;
+        return;
+      }
+      skill = next;
+      resetSession();
+    }
+    skill = next;
     call('saveSkill', skill).catch(showApiError);
     buildSkillUI();
   }
@@ -517,6 +586,20 @@
     log.innerHTML = '';
     const view = state[lang()].view;
     if (!view.length) { log.appendChild(welcomeCard()); return; }
+    const st = state[lang()];
+    if (st.resumedAt) {
+      const b = document.createElement('div');
+      b.className = 'resume';
+      const when = new Date(st.resumedAt);
+      b.innerHTML = '↩ Continuing your session from ' + when.toLocaleDateString() + ' ' +
+        when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ';
+      const fresh = document.createElement('button');
+      fresh.className = 'redo';
+      fresh.textContent = 'Start fresh';
+      fresh.onclick = () => { if (confirm('Discard this session and start again?')) resetSession(); };
+      b.appendChild(fresh);
+      log.appendChild(b);
+    }
     view.forEach((m, i) => {
       const d = document.createElement('div');
       d.className = 'msg ' + m.who;
@@ -571,9 +654,10 @@
   function resetSession() {
     speechSynthesis.cancel();
     rateFactor = 1;
-    state[lang()] = { messages: [], view: [] };
+    state[lang()] = { messages: [], view: [], skill: skill };
     phase[lang()] = 0;
     completed[lang()] = false;
+    saveLocal(lang());
     renderPhases();
     render();
   }
@@ -677,6 +761,7 @@
         setBusy(false);
         render();
         speak(shown, l, false); // speak first — saving happens in the background below
+        saveLocal(l);
         if (me && !me.isOwner) {
           me.usedToday += 1;
           document.getElementById('who').textContent = '👤 ' + me.name + ' · ' + me.usedToday + '/' + me.limit + ' today';
