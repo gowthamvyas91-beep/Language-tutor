@@ -415,6 +415,7 @@
   // ---------- Topic navigation ----------
 
   let topicList = {}; // per language, from getTopics
+  const completed = {}; // per language: the tutor has saved this session as finished
 
   function fillTopicPicker(sel) {
     const l = lang();
@@ -549,6 +550,21 @@
         log.appendChild(meta);
       }
     });
+    if (skill === 'guided' && phase[lang()] === 7 && view.length && view[view.length - 1].who === 'tutor' && view[view.length - 1].text !== '…') {
+      const done = document.createElement('div');
+      done.className = 'welcome';
+      done.innerHTML = '<h3>' + (completed[lang()] ? '✅ Session complete' : '🏁 Wrap-up') + '</h3>' +
+        '<div class="sub">' + (completed[lang()]
+          ? 'Your progress is saved. Ready for the next one?'
+          : 'Answer the speaking challenge, or finish now and save this session.') + '</div>';
+      const b = document.createElement('button');
+      b.className = 'go';
+      b.style.marginTop = '10px';
+      b.textContent = completed[lang()] ? '▶ Next session' : '✔ Finish & go to next session';
+      b.onclick = nextSession;
+      done.appendChild(b);
+      log.appendChild(done);
+    }
     log.scrollTop = log.scrollHeight;
   }
 
@@ -557,6 +573,7 @@
     rateFactor = 1;
     state[lang()] = { messages: [], view: [] };
     phase[lang()] = 0;
+    completed[lang()] = false;
     renderPhases();
     render();
   }
@@ -569,6 +586,22 @@
       : "Let's start today's " + skill + " session." + (act ? ' Activity: ' + act + '.' : ''));
   }
 
+  // End of a guided session → save it (if the tutor didn't already) and show the next topic's card.
+  function nextSession() {
+    const l = lang();
+    const go = () => {
+      resetSession();
+      plan[l] = null;
+      topicList[l] = null;
+      loadPlan();
+    };
+    if (completed[l]) { go(); return; }
+    setBusy(true);
+    call('finishSession', l, levels[l], 'Finished from the wrap-up button.')
+      .then(() => { setBusy(false); go(); })
+      .catch(err => { setBusy(false); showApiError(err); });
+  }
+
   function quick(text) {
     if (text === '__faster') { // only changes the playback speed
       rateFactor = Math.min(1.6, rateFactor + 0.15);
@@ -578,6 +611,7 @@
     }
     if (document.getElementById('sendBtn').disabled) return;
     if (!state[lang()].messages.length) { startSession(); return; }
+    if (text === 'Next' && skill === 'guided' && completed[lang()]) { nextSession(); return; }
     if (text === 'Slower please') rateFactor = Math.max(0.6, rateFactor - 0.1); // slow the voice too
     sendText(text);
   }
@@ -637,6 +671,7 @@
         const added = res.messages.slice(sent.length);
         s.messages = s.messages.concat(added);
         const shown = takePhase(res.text, l);
+        if (res.log && res.log.complete) completed[l] = true;
         s.view[s.view.length - 1] = { who: 'tutor', text: shown, model: res.model, escalated: res.escalated,
           secs: ((Date.now() - t0) / 1000).toFixed(1) };
         setBusy(false);
