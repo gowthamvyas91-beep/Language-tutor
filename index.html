@@ -47,6 +47,14 @@
     .welcome ol { margin: 6px 0 12px; padding-left: 20px; font-size: 13px; color: #444; line-height: 1.6; }
     .welcome .go { width: 100%; font-size: 16px; padding: 12px; border-radius: 10px; }
     .welcome .sub { font-size: 12px; color: #777; }
+    .welcome .stage { font-size: 12px; color: #555; margin-top: 8px; }
+    .bar100 { height: 6px; background: #eee; border-radius: 3px; margin: 4px 0 8px; overflow: hidden; }
+    .bar100 div { height: 100%; background: #34a853; }
+    .topicnav { display: flex; align-items: center; gap: 8px; }
+    .topicnav .topic { flex: 1; margin: 6px 0; }
+    .topicnav .nav { padding: 10px 12px; font-size: 16px; }
+    .goal { font-size: 13px; color: #1a4fb0; margin-top: 4px; }
+    .pick { width: 100%; margin: 4px 0 6px; font-size: 14px; }
     #micBanner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff8e1;
       border: 1px solid #f9d77e; border-radius: 10px; padding: 8px 10px; margin: 4px 0 6px; font-size: 13px; }
     #micBanner.show { display: flex; }
@@ -152,14 +160,37 @@
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ pin: c.pin, fn: fn, args: args })
     })
-      .then(r => r.text())
-      .then(t => {
+      .then(r => r.text().then(t => ({ status: r.status, url: r.url, text: t })))
+      .then(r => {
         let d;
-        try { d = JSON.parse(t); }
-        catch (e) { throw new Error('Unexpected reply from Apps Script. Check the URL and that access is set to "Anyone".'); }
+        try { d = JSON.parse(r.text); }
+        catch (e) { throw new Error(explainBadReply(r, fn)); }
         if (d.error) throw new Error(d.error);
         return d.result;
+      }, err => {
+        throw new Error('Could not reach Apps Script (' + err.message + '). Check your internet connection and the web app URL (⚙).');
       });
+  }
+
+  // Apps Script sent a web page instead of data: say what that page was.
+  function explainBadReply(r, fn) {
+    const t = r.text || '';
+    const title = ((t.match(/<title>([^<]*)<\/title>/i) || [])[1] || '').trim();
+    const plain = t.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const where = ' [' + fn + ', HTTP ' + r.status + ']';
+    if (/accounts\.google\.com|ServiceLogin|Sign in/i.test(r.url + ' ' + title + ' ' + plain.slice(0, 300)))
+      return 'Google asked for a sign-in, so the deployment is not open to "Anyone" (it may be "Anyone with Google account"), ' +
+        'or the URL is an old/test deployment. Deploy → Manage deployments → Edit → Who has access: Anyone → New version → Deploy, then copy that URL into ⚙.' + where;
+    if (/Script function not found: doPost/i.test(plain))
+      return 'The deployed code has no doPost. Paste the latest Code.gs, then Deploy → Manage deployments → Edit → Version: New version → Deploy.' + where;
+    if (/Authori[sz]ation is required|needs your permission|authorize/i.test(plain))
+      return 'Apps Script needs permission again. In the editor, pick "setupSheets" and press Run, approve the access, then try again.' + where;
+    if (/unable to open the file|Page Not Found|not found/i.test(title + ' ' + plain.slice(0, 200)))
+      return 'That web app URL does not exist (the deployment may have been archived). Copy the current Web app URL into ⚙.' + where;
+    if (r.status === 429 || /too many|quota|Service invoked/i.test(plain))
+      return 'Apps Script hit a daily limit or is busy. Wait a minute and try again.' + where;
+    return 'Apps Script sent a page instead of data: "' + (title ? title + ' — ' : '') + plain.slice(0, 160) + '"' + where;
   }
 
   function showApiError(err) {
@@ -278,13 +309,25 @@
     div.className = 'welcome';
     const name = { zh: 'Mandarin', es: 'Argentine Spanish', de: 'German' }[l];
     if (skill === 'guided') {
+      const kindIcon = p ? ({ review: '🔁 ', milestone: '🏁 ' }[p.kind] || '') : '';
       div.innerHTML =
         '<h3>⭐ Today\'s guided practice</h3>' +
         '<div class="sub">' + name + ' · ' + (levels[l] || 'beginner') + ' · about 20 minutes</div>' +
-        '<div class="topic">' + (p ? '<b>Topic ' + p.topicNumber + '/' + p.topicCount + ':</b> ' + escapeHtml(p.topic) +
-          (p.sessionOnTopic > 1 ? ' <span class="sub">(session ' + p.sessionOnTopic + ' — a new story)</span>' : '') +
-          (p.dueWords ? '<br><span class="sub">' + p.dueWords + ' words due for review</span>' : '')
-          : 'Loading today\'s topic…') + '</div>' +
+        (p ? '<div class="stage">Stage ' + p.stage + ': ' + escapeHtml(p.stageName) + (p.round > 1 ? ' · Round ' + p.round : '') +
+             ' · ' + p.doneCount + ' of 100 topics done</div>' +
+             '<div class="bar100"><div style="width:' + Math.min(100, p.doneCount) + '%"></div></div>' : '') +
+        '<div class="topicnav">' +
+          '<button class="secondary nav" id="prevT" title="Previous topic">◀</button>' +
+          '<div class="topic">' + (p
+            ? '<b>' + kindIcon + 'Topic ' + p.number + ':</b> ' + escapeHtml(p.title) + (p.isDone ? ' <span class="sub">✓ done before</span>' : '') +
+              '<div class="goal">🎯 By the end you can: ' + escapeHtml(p.goal) + '</div>' +
+              (p.sessionOnTopic > 1 ? '<div class="sub">Session ' + p.sessionOnTopic + ' of ' + p.sessionsNeeded + ' — a new story on the same topic</div>' : '') +
+              (p.dueWords ? '<div class="sub">' + p.dueWords + ' words due for review</div>' : '') +
+              (p.suggestedLevel && p.suggestedLevel !== levels[l] ? '<div class="sub">Tip: this stage works best at ' + p.suggestedLevel + ' level.</div>' : '')
+            : 'Loading today\'s topic…') + '</div>' +
+          '<button class="secondary nav" id="nextT" title="Next topic">▶</button>' +
+        '</div>' +
+        '<select id="topicPick" class="pick"><option>📋 Choose any topic…</option></select>' +
         '<ol><li>Warm-up — recall words from before</li><li>Listen — a short story you mostly understand</li>' +
         '<li>Shadow — repeat key sentences aloud</li><li>Speak — retell it and talk about you</li>' +
         '<li>Read — the same story as text</li><li>Write — dictation + your own sentences</li>' +
@@ -294,10 +337,63 @@
       b.textContent = '▶ Start guided practice';
       b.onclick = startSession;
       div.appendChild(b);
+      if (p) {
+        div.querySelector('#prevT').disabled = p.number <= 1;
+        div.querySelector('#prevT').onclick = () => goToTopic(p.number - 1);
+        div.querySelector('#nextT').onclick = () => goToTopic(p.number + 1);
+        fillTopicPicker(div.querySelector('#topicPick'));
+      } else {
+        div.querySelectorAll('.nav, .pick').forEach(x => x.disabled = true);
+      }
     } else {
       div.innerHTML = '<h3>' + name + ' · ' + skill + '</h3><div class="sub">Pick an activity above (or leave "Any") and tap Start.</div>';
     }
     return div;
+  }
+
+  // ---------- Topic navigation ----------
+
+  let topicList = {}; // per language, from getTopics
+
+  function fillTopicPicker(sel) {
+    const l = lang();
+    const build = data => {
+      sel.innerHTML = '';
+      const first = document.createElement('option');
+      first.textContent = '📋 Choose any topic…';
+      first.value = '';
+      sel.appendChild(first);
+      let group = null;
+      data.items.forEach(it => {
+        const base = ((it.n - 1) % 100) + 1;
+        if (base % 25 === 1) {
+          group = document.createElement('optgroup');
+          const round = Math.floor((it.n - 1) / 100) + 1;
+          group.label = (round > 1 ? 'Round ' + round + ' · ' : '') + 'Stage ' + (Math.floor((base - 1) / 25) + 1);
+          sel.appendChild(group);
+        }
+        const o = document.createElement('option');
+        o.value = it.n;
+        o.textContent = (it.n === data.current ? '▶ ' : it.done ? '✓ ' : '') +
+          ({ review: '🔁 ', milestone: '🏁 ' }[it.kind] || '') + it.n + '. ' + it.title;
+        group.appendChild(o);
+      });
+      sel.onchange = () => { if (sel.value) goToTopic(Number(sel.value)); };
+    };
+    if (topicList[l]) build(topicList[l]);
+    else call('getTopics', l).then(d => { topicList[l] = d; build(d); }).catch(() => {});
+  }
+
+  function goToTopic(n) {
+    const l = lang();
+    if (n < 1 || state[l].messages.length && !confirm('Switch topic? This ends the current session.')) { render(); return; }
+    plan[l] = null;
+    resetSession();
+    call('setTopic', l, levels[l], n).then(p => {
+      plan[l] = p;
+      topicList[l] = null;
+      render();
+    }).catch(err => { showApiError(err); loadPlan(); });
   }
 
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -467,7 +563,7 @@
         render();
         speak(shown, l, false); // speak first — saving happens in the background below
         const wrapUp = phase[l] === 7;
-        const refreshPlan = () => { if (wrapUp) { plan[l] = null; call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; }).catch(() => {}); } };
+        const refreshPlan = () => { if (wrapUp) { plan[l] = null; topicList[l] = null; call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; }).catch(() => {}); } };
         if (res.log) call('saveLog', l, levels[l], res.log).then(refreshPlan).catch(() => {});
         else refreshPlan();
       })
