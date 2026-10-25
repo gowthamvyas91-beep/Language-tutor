@@ -55,6 +55,11 @@
     .topicnav .nav { padding: 10px 12px; font-size: 16px; }
     .goal { font-size: 13px; color: #1a4fb0; margin-top: 4px; }
     .pick { width: 100%; margin: 4px 0 6px; font-size: 14px; }
+    .who { background: #e6f4ea; color: #137333; border-radius: 10px; padding: 1px 8px; font-weight: 600; }
+    .lbl { display: block; font-size: 13px; margin: 12px 0 4px; }
+    .txt { width: 100%; font-size: 16px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 8px; }
+    .loginerr { background: #fde7e7; color: #a00; border-radius: 8px; padding: 8px; margin-top: 8px; font-size: 13px; }
+    details { margin: 4px 0 10px; }
     #micBanner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff8e1;
       border: 1px solid #f9d77e; border-radius: 10px; padding: 8px 10px; margin: 4px 0 6px; font-size: 13px; }
     #micBanner.show { display: flex; }
@@ -88,9 +93,9 @@
     <button onclick="startSession()">Start</button>
     <button class="secondary" onclick="resetSession()">New</button>
     <button class="secondary" id="spk" onclick="toggleSpeak()">🔊 On</button>
-    <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Connection settings" style="display:none">⚙</button>
+    <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Switch learner / settings" style="display:none">⚙</button>
   </div>
-  <div class="hint" id="hint"></div>
+  <div class="hint"><span id="who" class="who" style="display:none"></span> <span id="hint"></span></div>
 
   <div id="micBanner">
     <span id="micText">🎤 Allow the microphone so you can answer out loud.</span>
@@ -132,43 +137,55 @@
   function getConfig() {
     let c = {};
     try { c = JSON.parse(localStorage.getItem('tutorConfig') || '{}'); } catch (e) {}
+    if (!c.code && c.pin) c.code = c.pin; // older versions called it a PIN
     return c;
   }
 
-  function setupConnection(force) {
-    let c = getConfig();
-    if (!force && c.url && c.pin) return c;
-    const url = prompt('Paste your Apps Script Web app URL (ends with /exec):', c.url || '');
-    if (!url) return c;
-    const pin = prompt('Enter the PIN you saved as APP_TOKEN in Script properties:', c.pin || '');
-    if (!pin) return c;
-    c = { url: url.trim(), pin: pin.trim() };
-    try { localStorage.setItem('tutorConfig', JSON.stringify(c)); } catch (e) {}
-    return c;
+  function saveConfig(c) {
+    try { localStorage.setItem('tutorConfig', JSON.stringify({ url: c.url || '', code: c.code || '' })); } catch (e) {}
   }
+
+  // A personal link looks like  …/Language-tutor/?api=<web app URL>&code=ABCD1234
+  (function readLinkParams() {
+    if (IN_GOOGLE) return;
+    const q = new URLSearchParams(location.search);
+    if (!q.get('api') && !q.get('code')) return;
+    const c = getConfig();
+    if (q.get('api')) c.url = q.get('api').trim();
+    if (q.get('code')) c.code = q.get('code').trim();
+    saveConfig(c);
+    try { history.replaceState(null, '', location.pathname); } catch (e) {} // keep the code out of the address bar
+  })();
+
+  const NEED_LOGIN = 'NEED_LOGIN';
 
   function call(fn, ...args) {
     if (IN_GOOGLE) {
       return new Promise((resolve, reject) =>
-        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(fn, args));
     }
-    const c = setupConnection(false);
-    if (!c.url || !c.pin) return Promise.reject(new Error('Not connected — tap ⚙ to enter your web app URL and PIN.'));
+    const c = getConfig();
+    if (!c.url || !c.code) return Promise.reject(new Error(NEED_LOGIN));
     return fetch(c.url, {
       method: 'POST',
       // text/plain avoids a CORS pre-flight, which Apps Script can't answer
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ pin: c.pin, fn: fn, args: args })
+      body: JSON.stringify({ code: c.code, fn: fn, args: args })
     })
       .then(r => r.text().then(t => ({ status: r.status, url: r.url, text: t })))
       .then(r => {
         let d;
         try { d = JSON.parse(r.text); }
         catch (e) { throw new Error(explainBadReply(r, fn)); }
+        if (d.code === 'BAD_CODE') {
+          const c2 = getConfig(); c2.code = ''; saveConfig(c2);
+          showLogin('That access code was not recognised or has been disabled.');
+          throw new Error(NEED_LOGIN);
+        }
         if (d.error) throw new Error(d.error);
         return d.result;
       }, err => {
-        throw new Error('Could not reach Apps Script (' + err.message + '). Check your internet connection and the web app URL (⚙).');
+        throw new Error('Could not reach the tutor server (' + err.message + '). Check your internet connection.');
       });
   }
 
@@ -194,14 +211,58 @@
   }
 
   function showApiError(err) {
+    if (err && err.message === NEED_LOGIN) { showLogin(); return; }
     const s = state[lang()];
     s.view.push({ who: 'err', text: 'Connection problem: ' + err.message });
     render();
   }
 
+  // ⚙ = switch learner / change the server link
   function reconnect() {
-    setupConnection(true);
-    location.reload();
+    showLogin('', true);
+  }
+
+  // ---------- Login (access code) ----------
+
+  let loginShown = false;
+
+  function showLogin(message, allowCancel) {
+    if (IN_GOOGLE) return;
+    loginShown = true;
+    const c = getConfig();
+    const log = document.getElementById('log');
+    log.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'welcome';
+    div.innerHTML =
+      '<h3>👋 Welcome to the language tutor</h3>' +
+      '<div class="sub">Practise Mandarin, Argentine Spanish or German by listening and speaking.</div>' +
+      (message ? '<div class="loginerr"></div>' : '') +
+      '<label class="lbl">Your access code</label>' +
+      '<input id="codeIn" class="txt" autocomplete="off" autocapitalize="characters" placeholder="e.g. K7M2QX9P">' +
+      '<details' + (c.url ? '' : ' open') + '><summary class="sub">Tutor server link' + (c.url ? ' (saved)' : '') + '</summary>' +
+      '<input id="urlIn" class="txt" placeholder="https://script.google.com/macros/s/…/exec"></details>' +
+      '<button class="go" id="loginGo">Start practising</button>' +
+      (allowCancel ? '<button class="secondary" id="loginCancel" style="width:100%;margin-top:6px">Cancel</button>' : '') +
+      '<div class="sub" style="margin-top:8px">Your progress is saved under your code. Use the same code on any device.</div>';
+    log.appendChild(div);
+    if (message) div.querySelector('.loginerr').textContent = message;
+    div.querySelector('#codeIn').value = c.code || '';
+    div.querySelector('#urlIn').value = c.url || '';
+    div.querySelector('#loginGo').onclick = () => {
+      const code = div.querySelector('#codeIn').value.trim();
+      const url = div.querySelector('#urlIn').value.trim();
+      if (!code) { div.querySelector('#codeIn').focus(); return; }
+      if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) {
+        div.querySelector('details').open = true;
+        div.querySelector('#urlIn').focus();
+        return;
+      }
+      saveConfig({ url: url, code: code });
+      location.reload();
+    };
+    const cancel = div.querySelector('#loginCancel');
+    if (cancel) cancel.onclick = () => { loginShown = false; render(); };
   }
   const LOCALES = { zh: 'zh-CN', es: 'es-AR', de: 'de-DE' };
   const VOICE_PREFS = { zh: ['zh-CN', 'zh'], es: ['es-AR', 'es-US', 'es-419', 'es-MX', 'es'], de: ['de-DE', 'de-AT', 'de-CH', 'de'] };
@@ -400,11 +461,29 @@
 
   // ---------- Saved settings ----------
 
-  call('getLevels').then(l => { levels = Object.assign({ zh: 'beginner', es: 'beginner', de: 'beginner' }, l); syncLevel(); loadPlan(); }).catch(showApiError);
-  call('getMode').then(m => { mode = m; document.getElementById('mode').value = m; }).catch(() => {});
-  call('getSkill').then(s => { skill = s; document.getElementById('skill').value = s; buildSkillUI(); }).catch(() => {});
+  let me = null; // the signed-in learner
+
+  function startApp() {
+    call('whoAmI').then(w => {
+      me = w;
+      const chip = document.getElementById('who');
+      if (!IN_GOOGLE && w && !w.isOwner) {
+        chip.textContent = '👤 ' + w.name + ' · ' + w.usedToday + '/' + w.limit + ' today';
+        chip.style.display = '';
+      }
+      if (w && !w.allowSonnet) {
+        const o = document.querySelector('#mode option[value="sonnet"]');
+        if (o) o.remove();
+      }
+      call('getLevels').then(l => { levels = Object.assign({ zh: 'beginner', es: 'beginner', de: 'beginner' }, l); syncLevel(); loadPlan(); }).catch(showApiError);
+      call('getMode').then(m => { mode = m; document.getElementById('mode').value = m; }).catch(() => {});
+      call('getSkill').then(s => { skill = s; document.getElementById('skill').value = s; buildSkillUI(); }).catch(() => {});
+    }).catch(showApiError);
+  }
+
   buildSkillUI();
   if (!IN_GOOGLE) document.getElementById('cfgBtn').style.display = '';
+  startApp();
 
   function syncLevel() { document.getElementById('level').value = levels[lang()]; }
 
@@ -432,6 +511,7 @@
   // ---------- Chat ----------
 
   function render() {
+    if (loginShown) return;
     const log = document.getElementById('log');
     log.innerHTML = '';
     const view = state[lang()].view;
@@ -562,6 +642,10 @@
         setBusy(false);
         render();
         speak(shown, l, false); // speak first — saving happens in the background below
+        if (me && !me.isOwner) {
+          me.usedToday += 1;
+          document.getElementById('who').textContent = '👤 ' + me.name + ' · ' + me.usedToday + '/' + me.limit + ' today';
+        }
         const wrapUp = phase[l] === 7;
         const refreshPlan = () => { if (wrapUp) { plan[l] = null; topicList[l] = null; call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; }).catch(() => {}); } };
         if (res.log) call('saveLog', l, levels[l], res.log).then(refreshPlan).catch(() => {});
