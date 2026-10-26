@@ -78,6 +78,20 @@
       border: 1px solid #f9d77e; border-radius: 10px; padding: 8px 10px; margin: 4px 0 6px; font-size: 13px; }
     #micBanner.show { display: flex; }
     #micBanner button { padding: 6px 12px; font-size: 13px; }
+    .w { cursor: help; border-radius: 3px; }
+    .w:hover { background: #fff3c4; }
+    #wtip { display: none; position: absolute; z-index: 50; max-width: 260px; background: #202124; color: #fff; border-radius: 8px;
+      padding: 8px 10px; font-size: 14px; line-height: 1.4; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+    #wtip .tw { font-weight: 700; font-size: 15px; }
+    #wtip .tr { font-weight: 400; color: #fbbc04; }
+    #wtip .tn { color: #cfd8dc; font-size: 12px; margin-top: 3px; }
+    .langgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 10px 0 6px; }
+    .langbtn { background: #f1f3f4; color: #222; border: 2px solid transparent; border-radius: 10px; padding: 8px; text-align: left;
+      display: flex; flex-direction: column; gap: 2px; }
+    .langbtn.on { border-color: #1a73e8; background: #e8f0fe; }
+    .langbtn .fl { font-size: 20px; }
+    .langbtn .nm { font-weight: 600; font-size: 13px; }
+    .langbtn .nt { font-size: 12px; color: #555; }
   </style>
 </head>
 <body>
@@ -86,6 +100,7 @@
       <option value="zh">🇨🇳 Mandarin</option>
       <option value="es">🇦🇷 Argentine Spanish</option>
       <option value="de">🇩🇪 German</option>
+      <option value="__setup">🌐 Languages…</option>
     </select>
     <select id="level" onchange="onLevelChange()">
       <option value="beginner">Beginner</option>
@@ -112,6 +127,7 @@
     <button onclick="startSession()">Start</button>
     <button class="secondary" onclick="resetSession()">New</button>
     <button class="secondary" id="spk" onclick="toggleSpeak()">🔊 On</button>
+    <button class="secondary" id="wordBtn" onclick="toggleWords()" title="Tap or hover a word to see its meaning">🔍 Words</button>
     <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Switch learner / settings" style="display:none">⚙</button>
   </div>
   <div class="hint"><span id="who" class="who" style="display:none"></span> <span id="hint"></span></div>
@@ -292,7 +308,7 @@
     div.className = 'welcome';
     div.innerHTML =
       '<h3>👋 Welcome to the language tutor</h3>' +
-      '<div class="sub">Practise Mandarin, Argentine Spanish or German by listening and speaking.</div>' +
+      '<div class="sub">Practise a new language by listening and speaking — Spanish, English, Mandarin, German, French, Japanese, Hindi, Telugu and more.</div>' +
       (message ? '<div class="loginerr"></div>' : '') +
       '<label class="lbl">Your access code</label>' +
       '<input id="codeIn" class="txt" autocomplete="off" autocapitalize="characters" placeholder="e.g. K7M2QX9P">' +
@@ -320,12 +336,24 @@
     const cancel = div.querySelector('#loginCancel');
     if (cancel) cancel.onclick = () => { loginShown = false; render(); };
   }
-  const LOCALES = { zh: 'zh-CN', es: 'es-AR', de: 'de-DE' };
-  const VOICE_PREFS = { zh: ['zh-CN', 'zh'], es: ['es-AR', 'es-US', 'es-419', 'es-MX', 'es'], de: ['de-DE', 'de-AT', 'de-CH', 'de'] };
-  const state = { zh: { messages: [], view: [] }, es: { messages: [], view: [] }, de: { messages: [], view: [] } };
+  // Languages come from the server (getLanguages); these are just the starting defaults.
+  var LANGS = {
+    zh: { code: 'zh', name: 'Mandarin Chinese', flag: '🇨🇳', speech: 'zh-CN', script: true, roman: 'pinyin' },
+    es: { code: 'es', name: 'Argentine Spanish', flag: '🇦🇷', speech: 'es-AR' },
+    de: { code: 'de', name: 'German', flag: '🇩🇪', speech: 'de-DE' }
+  };
+  var HELP_LANGS = {}; // code → { name, native, speech }
+  var helpLang = 'en';
+  const VOICE_FALLBACKS = { 'es-AR': ['es-AR', 'es-US', 'es-419', 'es-MX', 'es'], 'es-MX': ['es-MX', 'es-US', 'es-419', 'es'], 'de-DE': ['de-DE', 'de-AT', 'de-CH', 'de'] };
+  function langInfo(l) { return LANGS[l] || { code: l, name: l, flag: '🌐', speech: l }; }
+  function speechOf(l) { return langInfo(l).speech || l; }
+  function voicePrefs(l) { const s = speechOf(l); return VOICE_FALLBACKS[s] || [s, s.split('-')[0]]; }
+  function isScript(l) { return !!langInfo(l).script; }
+  function helpSpeech() { return helpLang === 'en' ? 'en-IN' : ((HELP_LANGS[helpLang] || {}).speech || 'en-IN'); }
+  const state = new Proxy({}, { get: (t, k) => { if (!(k in t)) t[k] = { messages: [], view: [] }; return t[k]; } });
   let speakOn = true;
   let rateFactor = 1; // lowered by the "Slower" button, reset by "New"
-  let levels = { zh: 'beginner', es: 'beginner', de: 'beginner' };
+  const levels = new Proxy({}, { get: (t, k) => (k in t ? t[k] : 'beginner') });
   let mode = 'auto';
   let skill = 'guided';
   const PHASES = ['Warm-up', 'Listen', 'Shadow', 'Speak', 'Read', 'Write', 'Wrap-up'];
@@ -361,7 +389,10 @@
   }
 
   function restoreLocal() {
-    ['zh', 'es', 'de'].forEach(l => {
+    const prefix = storeKey('');
+    const codes = [];
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(prefix) === 0) codes.push(k.slice(prefix.length)); } } catch (e) {}
+    codes.forEach(l => {
       try {
         const d = JSON.parse(localStorage.getItem(storeKey(l)) || 'null');
         if (!d || !d.messages || !d.messages.length) return;
@@ -395,7 +426,7 @@
                ['Real-world text', '🧾 Menu / sign / message'], ['News-lite', '📰 News-lite']],
     writing:  [['', 'Any activity'], ['Dictation', '🎧 Dictation'], ['Sentence building', '🧱 Sentence building'],
                ['Reply to a message', '📱 Reply to a message'], ['Mini diary', '📓 Mini diary'],
-               ['Character practice', '字 Character practice', 'zh']]
+               ['Character practice', '字 Character practice', 'script']]
   };
 
   const CHIPS = {
@@ -403,7 +434,7 @@
                ['💬 Help me say it', 'Help me say it'], ['➡ Next step', 'Next']],
     speaking: [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['🐇 Faster voice', '__faster'], ['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
                ['💬 Help me say it', 'Help me say it'], ['➡ Next', 'Next']],
-    reading:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📄 New passage', 'New passage'], ['❓ Meaning', 'What does that mean?'], ['🔤 Pinyin', 'Pinyin', 'zh'],
+    reading:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📄 New passage', 'New passage'], ['❓ Meaning', 'What does that mean?'], ['🔤 Pinyin', 'Pinyin', 'script'],
                ['🔊 Read it to me', 'Read it to me'], ['➡ Next', 'Next']],
     writing:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📝 New task', 'New task'], ['💡 Hint', 'Hint'], ['✅ Check', 'Check'],
                ['👀 Show me', 'Show me'], ['➡ Next', 'Next']]
@@ -423,15 +454,15 @@
 
     const act = document.getElementById('activity');
     act.innerHTML = '';
-    ACTIVITIES[skill].filter(a => !a[2] || a[2] === l).forEach(a => {
+    ACTIVITIES[skill].filter(a => !a[2] || (a[2] === 'script' && isScript(l))).forEach(a => {
       const o = document.createElement('option');
-      o.value = a[0]; o.textContent = a[1];
+      o.value = a[0]; o.textContent = (a[2] === 'script' && l !== 'zh') ? '🔤 Script practice' : a[1];
       act.appendChild(o);
     });
 
     const chips = document.getElementById('chips');
     chips.innerHTML = '';
-    CHIPS[skill].filter(c => !c[2] || c[2] === l).forEach(c => {
+    CHIPS[skill].filter(c => !c[2] || (c[2] === 'script' && isScript(l))).map(c => (c[2] === 'script' && l !== 'zh') ? ['🔤 Romanization', 'Romanization', 'script'] : c).forEach(c => {
       const b = document.createElement('button');
       b.className = 'chip';
       b.textContent = c[0];
@@ -479,7 +510,7 @@
     const p = plan[l];
     const div = document.createElement('div');
     div.className = 'welcome';
-    const name = { zh: 'Mandarin', es: 'Argentine Spanish', de: 'German' }[l];
+    const name = langInfo(l).name;
     if (skill === 'guided') {
       const kindIcon = p ? ({ review: '🔁 ', milestone: '🏁 ' }[p.kind] || '') : '';
       div.innerHTML =
@@ -599,6 +630,225 @@
     }).catch(err => { showApiError(err); loadPlan(); });
   }
 
+  // ---------- Your languages (setup page) ----------
+
+  var myLangs = ['zh', 'es', 'de'], maxLangs = 50, setupShown = false;
+
+  function applyLanguages(d) {
+    if (!d || !d.catalog) return d;
+    LANGS = {};
+    d.catalog.forEach(x => { LANGS[x.code] = x; });
+    HELP_LANGS = {};
+    (d.helpOptions || []).forEach(x => { HELP_LANGS[x.code] = x; });
+    helpLang = d.help || 'en';
+    myLangs = Array.isArray(d.mine) ? d.mine : myLangs; // a new learner starts with none chosen
+    maxLangs = d.max || maxLangs;
+    const sel = document.getElementById('lang');
+    let want = lang();
+    try { want = localStorage.getItem('tutorLang') || want; } catch (e) {}
+    sel.innerHTML = '';
+    myLangs.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c;
+      o.textContent = langInfo(c).flag + ' ' + langInfo(c).name;
+      sel.appendChild(o);
+    });
+    const m = document.createElement('option');
+    m.value = '__setup';
+    m.textContent = '🌐 Languages…';
+    sel.appendChild(m);
+    sel.value = myLangs.indexOf(want) >= 0 ? want : (myLangs[0] || '__setup');
+    lastLang = lang();
+    if (!myLangs.length) { showLanguageSetup(false); return d; }
+    syncLevel(); buildSkillUI(); matchSessionSkill(); renderPhases(); render();
+    if (!plan[lang()]) loadPlan();
+    return d;
+  }
+
+  function showLanguageSetup(allowCancel) {
+    setupShown = true;
+    hideTip();
+    const log = document.getElementById('log');
+    log.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'welcome';
+    let chosen = myLangs.filter(c => LANGS[c]);
+    div.innerHTML = '<h3>🌐 Your languages</h3>' +
+      '<div class="sub">Choose the languages you want to learn' + (maxLangs < 50 ? ' (up to ' + maxLangs + ')' : '') + '. You can change this any time from the language menu.</div>' +
+      '<div class="langgrid"></div><div class="sub count"></div>' +
+      '<label class="lbl">📖 Explain things to me in (my own language)</label>' +
+      '<select class="pick helpsel"></select>' +
+      '<div class="sub">Meanings, explanations and answers to your questions come in this language — e.g. learn Spanish through Telugu, or English through Hindi.</div>' +
+      '<button class="go savelangs" style="margin-top:10px">✔ Save</button>' +
+      (allowCancel ? '<button class="secondary cancellangs" style="width:100%;margin-top:6px">Cancel</button>' : '');
+    const grid = div.querySelector('.langgrid');
+    const count = div.querySelector('.count');
+    const draw = () => {
+      grid.innerHTML = '';
+      Object.values(LANGS).forEach(x => {
+        const b = document.createElement('button');
+        const on = chosen.indexOf(x.code) >= 0;
+        b.className = 'langbtn' + (on ? ' on' : '');
+        b.innerHTML = '<span class="fl"></span><span class="nm"></span><span class="nt"></span>';
+        b.querySelector('.fl').textContent = x.flag;
+        b.querySelector('.nm').textContent = x.name;
+        b.querySelector('.nt').textContent = x.native && x.native !== x.name ? x.native : '';
+        b.onclick = () => {
+          if (on) chosen = chosen.filter(c => c !== x.code);
+          else if (chosen.length < maxLangs) chosen.push(x.code);
+          else { count.textContent = 'You can choose up to ' + maxLangs + '. Tap one to remove it first.'; return; }
+          draw();
+        };
+        grid.appendChild(b);
+      });
+      count.textContent = chosen.length + (maxLangs < 50 ? ' of ' + maxLangs : '') + ' chosen';
+    };
+    draw();
+    const hs = div.querySelector('.helpsel');
+    Object.values(HELP_LANGS).sort((a, b) => (a.code === 'en' ? -1 : b.code === 'en' ? 1 : a.name.localeCompare(b.name))).forEach(x => {
+      const o = document.createElement('option');
+      o.value = x.code;
+      o.textContent = x.name + (x.native && x.native !== x.name ? ' — ' + x.native : '');
+      hs.appendChild(o);
+    });
+    hs.value = helpLang;
+    div.querySelector('.savelangs').onclick = () => {
+      if (!chosen.length) { count.textContent = 'Choose at least one language.'; return; }
+      call('saveLanguages', chosen, hs.value).then(d => {
+        setupShown = false;
+        wordCache.clear();
+        if (chosen.indexOf(lang()) < 0) try { localStorage.setItem('tutorLang', chosen[0]); } catch (e) {}
+        applyLanguages(d);
+      }).catch(err => { count.textContent = err.message; });
+    };
+    const c = div.querySelector('.cancellangs');
+    if (c) c.onclick = () => { setupShown = false; render(); };
+    log.appendChild(div);
+  }
+
+  // ---------- Word help: hover (computer) or tap (phone) any word the tutor wrote ----------
+
+  var wordsOn = true;
+  try { wordsOn = localStorage.getItem('tutorWords') !== 'off'; } catch (e) {}
+  var wordCache = new Map();
+  var tipTimer = null, tipFor = null;
+
+  function toggleWords() {
+    wordsOn = !wordsOn;
+    try { localStorage.setItem('tutorWords', wordsOn ? 'on' : 'off'); } catch (e) {}
+    document.getElementById('wordBtn').textContent = wordsOn ? '🔍 Words' : '🔍 Off';
+    hideTip();
+    render();
+  }
+
+  // Wrap each word of a tutor message in a <span class="w"> (Chinese/Japanese need a word segmenter).
+  function wrapWords(el, l) {
+    const seg = (window.Intl && Intl.Segmenter) ? new Intl.Segmenter(speechOf(l), { granularity: 'word' }) : null;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(n => {
+      const text = n.nodeValue;
+      if (!/\p{L}/u.test(text)) return;
+      const frag = document.createDocumentFragment();
+      const parts = seg
+        ? Array.from(seg.segment(text), s => ({ t: s.segment, w: s.isWordLike && /\p{L}/u.test(s.segment) }))
+        : text.split(/([\p{L}\p{M}'’]+)/u).map((t, i) => ({ t: t, w: i % 2 === 1 }));
+      parts.forEach(p => {
+        if (!p.t) return;
+        if (p.w) {
+          const s = document.createElement('span');
+          s.className = 'w';
+          s.textContent = p.t;
+          frag.appendChild(s);
+        } else frag.appendChild(document.createTextNode(p.t));
+      });
+      n.parentNode.replaceChild(frag, n);
+    });
+  }
+
+  function tipEl() {
+    let t = document.getElementById('wtip');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'wtip';
+      document.body.appendChild(t);
+    }
+    return t;
+  }
+
+  function hideTip() {
+    clearTimeout(tipTimer);
+    tipFor = null;
+    const t = document.getElementById('wtip');
+    if (t) t.style.display = 'none';
+  }
+
+  function showTip(span) {
+    const l = lang();
+    const word = span.textContent.trim();
+    if (!word) return;
+    tipFor = span;
+    const t = tipEl();
+    const r = span.getBoundingClientRect();
+    t.style.display = 'block';
+    t.style.left = Math.max(8, Math.min(window.innerWidth - 268, r.left + window.scrollX)) + 'px';
+    t.style.top = (r.bottom + window.scrollY + 6) + 'px';
+    const fill = d => {
+      if (tipFor !== span) return;
+      t.innerHTML = '';
+      const h = document.createElement('div');
+      h.className = 'tw';
+      h.textContent = (d && d.word) || word;
+      if (d && d.reading) { const rd = document.createElement('span'); rd.className = 'tr'; rd.textContent = ' ' + d.reading; h.appendChild(rd); }
+      t.appendChild(h);
+      const m = document.createElement('div');
+      m.textContent = !d ? '…' : d.error ? d.error : (d.meaning || 'Already in your language') + (d.type ? ' (' + d.type + ')' : '');
+      t.appendChild(m);
+      if (d && d.note) { const nt = document.createElement('div'); nt.className = 'tn'; nt.textContent = d.note; t.appendChild(nt); }
+    };
+    const key = l + '|' + helpLang + '|' + word.toLowerCase();
+    if (wordCache.has(key)) { fill(wordCache.get(key)); return; }
+    fill(null);
+    const msg = span.closest('.msg');
+    const full = msg ? msg.textContent : word;
+    const at = Math.max(0, full.indexOf(word));
+    const sentence = full.slice(Math.max(0, at - 120), at + word.length + 120);
+    call('lookupWord', l, word, sentence)
+      .then(d => { wordCache.set(key, d || { meaning: '' }); fill(d || { meaning: '' }); })
+      .catch(err => fill({ error: err.message }));
+  }
+
+  (function wireWords() {
+    const log = document.getElementById('log');
+    log.addEventListener('click', e => {
+      const w = e.target.closest && e.target.closest('.msg.tutor .w');
+      if (!w || !wordsOn) { hideTip(); return; }
+      e.stopPropagation(); // don't replay the whole message
+      showTip(w);
+      if ('speechSynthesis' in window && window.SpeechSynthesisUtterance) { // say the word
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(w.textContent);
+        u.lang = speechOf(lang());
+        const v = pickVoice(lang()); if (v) u.voice = v;
+        u.rate = 0.8;
+        speechSynthesis.speak(u);
+      }
+    }, true);
+    log.addEventListener('pointerover', e => {
+      if (e.pointerType !== 'mouse' || !wordsOn) return;
+      const w = e.target.closest && e.target.closest('.msg.tutor .w');
+      clearTimeout(tipTimer);
+      if (w) tipTimer = setTimeout(() => showTip(w), 350);
+    });
+    log.addEventListener('pointerout', e => {
+      if (e.pointerType !== 'mouse') return;
+      const w = e.target.closest && e.target.closest('.w');
+      if (w) { clearTimeout(tipTimer); setTimeout(() => { if (tipFor === w) hideTip(); }, 900); }
+    });
+    log.addEventListener('scroll', hideTip);
+  })();
+
   // ---------- Choose a topic: tap, pick from a list, or type ----------
 
   const TOPIC_IDEAS = {
@@ -679,7 +929,7 @@
     const groups = Object.assign({}, ideas.groups);
     const local = LOCAL_IDEAS[lang()];
     if (local && currentAudience() !== 'kids') {
-      const where = { es: 'Argentina', zh: 'China', de: 'Germany' }[lang()];
+      const where = { es: 'Argentina', zh: 'China', de: 'Germany' }[lang()] || langInfo(lang()).name;
       groups['🌍 Life in ' + where] = local;
     }
     Object.keys(groups).forEach(g => {
@@ -736,6 +986,8 @@
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
+    if (!document.getElementById('lang').value || lang() === '__setup') document.getElementById('lang').value = 'zh';
+    lastLang = lang();
     restoreLocal();
     renderPhases();
     render();
@@ -750,7 +1002,10 @@
         const o = document.querySelector('#mode option[value="sonnet"]');
         if (o) o.remove();
       }
-      call('getLevels').then(l => { levels = Object.assign({ zh: 'beginner', es: 'beginner', de: 'beginner' }, l); syncLevel(); loadPlan(); }).catch(showApiError);
+      call('getLanguages').then(applyLanguages).then(d => {
+        if (d && !d.setUp) showLanguageSetup(false); // first visit: choose your languages
+      }).catch(() => {}); // older server: keep the three default languages
+      call('getLevels').then(l => { Object.assign(levels, l); syncLevel(); loadPlan(); }).catch(showApiError);
       call('getMode').then(m => { mode = m; document.getElementById('mode').value = m; }).catch(() => {});
       call('getAudience').then(a => {
         const sel = document.getElementById('audience');
@@ -771,7 +1026,11 @@
 
   function syncLevel() { document.getElementById('level').value = levels[lang()]; }
 
-  function onLangChange() { rememberLang(); syncLevel(); buildSkillUI(); matchSessionSkill(); renderPhases(); render(); if (!plan[lang()]) loadPlan(); }
+  var lastLang = 'zh';
+  function onLangChange() {
+    if (lang() === '__setup') { document.getElementById('lang').value = lastLang; showLanguageSetup(myLangs.length > 0); return; }
+    lastLang = lang();
+    rememberLang(); syncLevel(); buildSkillUI(); matchSessionSkill(); renderPhases(); render(); if (!plan[lang()]) loadPlan(); }
 
   function onLevelChange() {
     const l = lang();
@@ -810,7 +1069,8 @@
   // ---------- Chat ----------
 
   function render() {
-    if (loginShown) return;
+    if (loginShown || setupShown) return;
+    hideTip();
     const log = document.getElementById('log');
     log.innerHTML = '';
     const view = state[lang()].view;
@@ -838,7 +1098,7 @@
     view.forEach((m, i) => {
       const d = document.createElement('div');
       d.className = 'msg ' + m.who + (m.q ? ' q' : '');
-      if (m.who === 'tutor') d.innerHTML = richText(m.text);
+      if (m.who === 'tutor') { d.innerHTML = richText(m.text); if (wordsOn && m.text !== '…') wrapWords(d, lang()); }
       else d.textContent = m.text;
       if (m.img) {
         const im = document.createElement('img');
@@ -1212,7 +1472,7 @@
 
   function pickVoice(l) {
     const voices = speechSynthesis.getVoices();
-    for (const p of VOICE_PREFS[l]) {
+    for (const p of voicePrefs(l)) {
       const v = voices.find(v => v.lang.replace('_', '-').startsWith(p));
       if (v) return v;
     }
@@ -1228,7 +1488,7 @@
     const voice = pickVoice(l);
     parts.forEach(p => {
       const u = new SpeechSynthesisUtterance(p);
-      u.lang = LOCALES[l];
+      u.lang = speechOf(l);
       if (voice) u.voice = voice;
       u.rate = ({ zh: 0.75, es: 0.9, de: 0.85 }[l] || 0.9) * rateFactor; // slower for tones / long words
       speechSynthesis.speak(u);
@@ -1433,7 +1693,7 @@
 
     function begin() {
       r = new SR();
-      r.lang = asking ? 'en-IN' : LOCALES[lang()]; // questions are usually asked in English
+      r.lang = asking ? helpSpeech() : speechOf(lang()); // questions are asked in your explanation language
       r.interimResults = true;  // show words as you speak
       r.continuous = true;      // don't stop at the first pause
       r.maxAlternatives = 1;
