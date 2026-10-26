@@ -68,7 +68,9 @@
     .ownrow { display: flex; gap: 6px; }
     .ownrow .txt { margin-bottom: 4px; }
     .ownactive { background: #fff8e1; border: 1px solid #f9d77e; border-radius: 10px; padding: 10px; margin: 8px 0; }
-    .recent { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+    .recent { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; align-items: center; }
+    .chooser .quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+    .chooser { margin-top: 12px; border-top: 1px solid #eee; padding-top: 8px; }
     .resume { font-size: 12px; color: #555; background: #eef3fd; border-radius: 8px; padding: 6px 10px; margin: 4px 0; }
     #micBanner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff8e1;
       border: 1px solid #f9d77e; border-radius: 10px; padding: 8px 10px; margin: 4px 0 6px; font-size: 13px; }
@@ -505,34 +507,12 @@
       b.textContent = '▶ Start guided practice';
       b.onclick = startSession;
       div.appendChild(b);
-      // …or any topic you want to talk about
-      const own = document.createElement('div');
-      own.className = 'own';
-      own.innerHTML = '<div class="lbl">✍ Or practise your own topic</div>' +
-        '<div class="ownrow"><input id="ownTopic" class="txt" maxlength="120" placeholder="e.g. cricket, my job in accounting, cooking biryani">' +
-        '<button class="secondary" id="ownGo">▶ Practise</button></div>' +
-        '<div class="sub">Full 7-step session on your topic. Your place in the 100 topics stays the same.</div>';
-      div.appendChild(own);
-      const goOwn = () => {
-        const t = own.querySelector('#ownTopic').value.trim();
-        if (!t) { own.querySelector('#ownTopic').focus(); return; }
-        startCustom(t);
-      };
-      own.querySelector('#ownGo').onclick = goOwn;
+      // …or choose any topic: tap, pick from the list, or type
       const cinfo = p && p.custom;
-      if (cinfo && cinfo.recent && cinfo.recent.length) {
-        const rec = document.createElement('div');
-        rec.className = 'recent';
-        cinfo.recent.forEach(x => {
-          const c = document.createElement('button');
-          c.className = 'chip';
-          c.textContent = '✍ ' + x.title + (x.sessions ? ' · ' + x.sessions : '');
-          c.title = x.sessions + ' sessions so far — tap to continue';
-          c.onclick = () => startCustom(x.title);
-          rec.appendChild(c);
-        });
-        own.insertBefore(rec, own.querySelector('.sub'));
-      }
+      div.appendChild(topicChooser(t => startCustom(t), {
+        recent: cinfo && cinfo.recent,
+        note: 'Full 7-step session on your topic, and it never runs out: each new session takes a new angle. Your place in the 100 topics stays the same.'
+      }));
       if (cinfo && cinfo.active) {
         const box = document.createElement('div');
         box.className = 'ownactive';
@@ -553,7 +533,6 @@
         box.appendChild(back);
         div.insertBefore(box, div.querySelector('.topicnav'));
       }
-      own.querySelector('#ownTopic').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); goOwn(); } };
       if (p) {
         div.querySelector('#prevT').disabled = p.number <= 1;
         div.querySelector('#prevT').onclick = () => goToTopic(p.number - 1);
@@ -563,7 +542,10 @@
         div.querySelectorAll('.nav, .pick').forEach(x => x.disabled = true);
       }
     } else {
-      div.innerHTML = '<h3>' + name + ' · ' + skill + '</h3><div class="sub">Pick an activity above (or leave "Any") and tap Start.</div>';
+      div.innerHTML = '<h3>' + name + ' · ' + skill + '</h3><div class="sub">Pick an activity above (or leave "Any") and tap Start — or choose a topic below.</div>';
+      div.appendChild(topicChooser(t => startSession(t), {
+        note: 'The ' + skill + ' session will use this topic, with the activity chosen above.'
+      }));
     }
     return div;
   }
@@ -615,6 +597,130 @@
     }).catch(err => { showApiError(err); loadPlan(); });
   }
 
+  // ---------- Choose a topic: tap, pick from a list, or type ----------
+
+  const TOPIC_IDEAS = {
+    adults: {
+      quick: ['☕ Café and food', '✈️ Travel', '💼 My work', '🛍 Shopping', '🏏 Cricket', '🎬 Movies and music', '🏥 At the doctor', '👨‍👩‍👧 Family and friends'],
+      groups: {
+        'Daily life': ['Morning routine', 'Cooking at home', 'Grocery shopping', 'Chores at home', 'My neighbourhood', 'Public transport', 'Weekend plans', 'Weather and clothes'],
+        'Food and drink': ['Street food', 'Dinner at a restaurant', 'Coffee and tea', 'Indian recipes', 'Vegetarian food abroad', 'Cooking for friends'],
+        'Travel': ['Booking a hotel', 'At the airport', 'Asking for directions', 'Sightseeing', 'A road trip', 'Lost luggage', 'Renting a flat abroad'],
+        'Work and money': ['My job', 'Meetings', 'Job interview', 'Phone calls and emails', 'Banking', 'Accounting and taxes', 'Starting a business', 'Working with clients'],
+        'People': ['Describing people', 'Friends', 'Feelings', 'Celebrations and festivals', 'Weddings', 'Neighbours'],
+        'Hobbies': ['Cricket', 'Football', 'Movies and series', 'Music', 'Books', 'Gym and fitness', 'Photography', 'Gardening'],
+        'Health': ['At the doctor', 'At the pharmacy', 'Healthy habits', 'Sleep and stress'],
+        'Big topics': ['Technology and AI', 'The environment', 'News of the day', 'Life in India and abroad', 'History of India']
+      }
+    },
+    teens: {
+      quick: ['🏫 School', '👫 Friends', '⚽ Sports', '🎮 Video games', '🎵 Music', '📱 Apps and social media', '✈️ Travel', '🍕 Food'],
+      groups: {
+        'School life': ['My school day', 'Exams and homework', 'Favourite subjects', 'School trips', 'Clubs and teams'],
+        'Hobbies': ['Cricket', 'Football', 'Video games', 'Music and bands', 'Movies and series', 'Drawing and art', 'Cooking snacks'],
+        'Friends and family': ['Best friends', 'My family', 'Birthday parties', 'Festivals'],
+        'Tech': ['My phone and apps', 'YouTube and creators', 'Coding', 'Robots and AI'],
+        'Future': ['Dream job', 'Studying abroad', 'Learning languages', 'Travel plans']
+      }
+    },
+    kids: {
+      quick: ['🐶 Animals', '🎨 Colours', '🍎 Food', '👪 My family', '🏫 School', '🧸 Toys and games', '🌳 Nature', '🎂 Birthdays'],
+      groups: {
+        'My world': ['My family', 'My house', 'My body', 'Clothes', 'My day'],
+        'Fun': ['Toys', 'Games in the park', 'Drawing', 'Sports', 'Superheroes'],
+        'Animals and nature': ['Pets', 'Zoo animals', 'Farm animals', 'Weather', 'The sea', 'Space and stars'],
+        'School': ['My classroom', 'Numbers', 'Shapes', 'My friends at school'],
+        'Celebrations': ['Birthdays', 'Diwali', 'Holidays', 'Sweets and treats']
+      }
+    }
+  };
+
+  // Local flavour for each language (adults and teens)
+  const LOCAL_IDEAS = {
+    es: ['Mate and merienda', 'An asado with friends', 'Boca vs River', 'Buenos Aires neighbourhoods', 'Tango', 'Taking the colectivo'],
+    zh: ['Dumplings and hotpot', 'Chinese New Year', 'The high-speed train', 'WeChat and mobile payments', 'Tea culture', 'Shopping at a night market'],
+    de: ['German bakeries', 'Taking the Deutsche Bahn', 'Christmas markets', 'Recycling in Germany', 'Oktoberfest', 'Renting a flat in Berlin']
+  };
+
+  function currentAudience() {
+    const a = document.getElementById('audience');
+    return (a && TOPIC_IDEAS[a.value]) ? a.value : 'adults';
+  }
+
+  const plainTopic = t => t.replace(/^[^\p{L}\p{N}]+/u, '').trim(); // drop the emoji
+
+  function topicChooser(onChoose, opts) {
+    opts = opts || {};
+    const ideas = TOPIC_IDEAS[currentAudience()];
+    const box = document.createElement('div');
+    box.className = 'own chooser';
+    box.innerHTML = '<div class="lbl">🎯 Choose a topic to learn</div>' +
+      '<div class="quick"></div>' +
+      '<select class="pick ideas"><option value="">📂 More topics…</option></select>' +
+      '<div class="ownrow"><input class="txt owntopic" maxlength="120" placeholder="✍ Or type any topic — e.g. my job in accounting, cooking biryani">' +
+      '<button class="secondary owngo">▶ Practise</button></div>' +
+      (opts.note ? '<div class="sub"></div>' : '');
+    if (opts.note) box.querySelector('.sub').textContent = opts.note;
+
+    // 1. buttons
+    const quick = box.querySelector('.quick');
+    ideas.quick.forEach(t => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.textContent = t;
+      b.onclick = () => onChoose(plainTopic(t));
+      quick.appendChild(b);
+    });
+
+    // 2. list
+    const sel = box.querySelector('.ideas');
+    const groups = Object.assign({}, ideas.groups);
+    const local = LOCAL_IDEAS[lang()];
+    if (local && currentAudience() !== 'kids') {
+      const where = { es: 'Argentina', zh: 'China', de: 'Germany' }[lang()];
+      groups['🌍 Life in ' + where] = local;
+    }
+    Object.keys(groups).forEach(g => {
+      const og = document.createElement('optgroup');
+      og.label = g;
+      groups[g].forEach(t => {
+        const o = document.createElement('option');
+        o.value = t;
+        o.textContent = t;
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    sel.onchange = () => { if (sel.value) onChoose(sel.value); };
+
+    // 3. type
+    const input = box.querySelector('.owntopic');
+    const go = () => {
+      const t = input.value.trim();
+      if (!t) { input.focus(); return; }
+      onChoose(t);
+    };
+    box.querySelector('.owngo').onclick = go;
+    input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
+
+    // recent topics you practised (guided practice)
+    if (opts.recent && opts.recent.length) {
+      const rec = document.createElement('div');
+      rec.className = 'recent';
+      rec.innerHTML = '<span class="sub">Recent:</span>';
+      opts.recent.forEach(x => {
+        const c = document.createElement('button');
+        c.className = 'chip';
+        c.textContent = '✍ ' + x.title + (x.sessions ? ' · ' + x.sessions : '');
+        c.title = x.sessions + ' sessions so far — tap to continue';
+        c.onclick = () => onChoose(x.title);
+        rec.appendChild(c);
+      });
+      box.insertBefore(rec, sel);
+    }
+    return box;
+  }
+
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
   // ---------- Saved settings ----------
@@ -644,6 +750,7 @@
         sel.value = a.audience;
         sel.disabled = !!a.locked;
         if (a.locked) sel.title = 'Set by your teacher';
+        render(); // topic suggestions depend on the audience
       }).catch(() => {});
       call('getSkill').then(s => { skill = s; document.getElementById('skill').value = s; buildSkillUI(); matchSessionSkill(); render(); }).catch(() => {});
     }).catch(showApiError);
@@ -674,6 +781,7 @@
 
   function onAudienceChange() {
     call('saveAudience', document.getElementById('audience').value).catch(showApiError);
+    render();
   }
 
   function onSkillChange() {
@@ -809,12 +917,14 @@
     call('leaveCustomTopic', l, levels[l]).then(p => { plan[l] = p; render(); }).catch(err => { showApiError(err); loadPlan(); });
   }
 
-  function startSession() {
+  function startSession(topic) {
+    if (typeof topic !== 'string') topic = ''; // called from a button click
     resetSession();
     const act = document.getElementById('activity').value;
     sendText(skill === 'guided'
       ? "Let's start today's guided practice."
-      : "Let's start today's " + skill + " session." + (act ? ' Activity: ' + act + '.' : ''));
+      : "Let's start today's " + skill + " session." + (act ? ' Activity: ' + act + '.' : '') +
+        (topic ? ' Topic: ' + topic + ' — keep the whole session about this topic.' : ''));
   }
 
   // End of a guided session → save it (if the tutor didn't already) and show the next topic's card.
