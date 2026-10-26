@@ -124,6 +124,11 @@
     .pbtns .go { flex: 2; padding: 12px; border-radius: 10px; font-size: 15px; }
     .pbtns .secondary { flex: 1; }
     .gtypes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .pitem { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid #f1f3f4; font-size: 14px; }
+    .pitem input { margin-top: 3px; width: 18px; height: 18px; flex: 0 0 18px; }
+    .pitem input:checked + span b { text-decoration: line-through; color: #777; }
+    .mitem { padding: 6px 0; border-top: 1px solid #f1f3f4; font-size: 14px; }
+    .mitem a { font-size: 12px; color: #1a73e8; }
     .msg.cele { background: linear-gradient(135deg, #fff8e1, #e6f4ea); border: 1px solid #f9d77e; font-weight: 600; max-width: 100%; }
     #toast { position: fixed; left: 50%; bottom: 90px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; z-index: 60;
       background: #202124; color: #fff; border-radius: 12px; padding: 10px 16px; font-size: 14px; max-width: 92vw; text-align: center;
@@ -771,15 +776,49 @@
       ? '<div class="tests">' + s.tests.map(t => '<div class="trow"><span>' + (t.passed ? '🏆' : '📝') + ' Stage ' + t.stage + ' · ' + t.date + '</span><b>' + t.score + '/100' + (t.level ? ' · ' + escapeHtml(t.level) : '') + '</b></div>' +
           (t.workOn ? '<div class="sub">Work on: ' + escapeHtml(t.workOn) + '</div>' : '')).join('') + '</div>'
       : '<div class="sub">No tests yet. Take one any time — it is a 10-minute speaking check, scored out of 100 (70 = pass).</div>';
+    if (s.plan) html += tutorPlanHtml(s.plan);
     html += '<div class="pbtns"><button class="go" id="pTest">🧪 Take a level test</button>' +
       '<button class="secondary" id="pGoal">' + (g ? '✏️ Change goal' : '🎯 Set a goal') + '</button></div>' +
       '<div class="sub" style="margin-top:8px">Minutes are estimated from your replies. A day counts for your streak after 1 finished session or 5 replies.</div>' +
       '<div id="goalForm"></div></div>';
     box.innerHTML = html;
     box.querySelector('#pClose').onclick = closeProgress;
+    wirePlan(box, s.plan);
     box.querySelector('#pTest').onclick = startTest;
     box.querySelector('#pGoal').onclick = () => goalForm(box.querySelector('#goalForm'), g);
     if (!g) goalForm(box.querySelector('#goalForm'), null);
+  }
+
+  // The tutor's plan from the last test: exercises to tick off + things to watch and listen to.
+  const MEDIA_ICON = { film: '🎬', series: '📺', youtube: '▶️', podcast: '🎧', music: '🎵' };
+  function planKey(p) { return 'tutorPlan_' + (getConfig().code || 'owner') + '_' + lang() + '_' + p.date; }
+  function planTicks(p) { try { return JSON.parse(localStorage.getItem(planKey(p)) || '{}'); } catch (e) { return {}; } }
+  function searchUrl(m) {
+    const q = encodeURIComponent(m.title + (m.type === 'film' || m.type === 'series' ? ' watch' : ''));
+    return (m.type === 'film' || m.type === 'series') ? 'https://www.google.com/search?q=' + q : 'https://www.youtube.com/results?search_query=' + q;
+  }
+  function tutorPlanHtml(p) {
+    const ticks = planTicks(p);
+    let h = '<h4>📋 Your tutor\'s plan <span class="sub">from your test on ' + p.date + '</span></h4>';
+    if (p.plan.length) h += '<div class="plan">' + p.plan.map((x, i) =>
+      '<label class="pitem"><input type="checkbox" data-i="' + i + '"' + (ticks[i] ? ' checked' : '') + '><span><b>' + escapeHtml(x.what) + '</b>' +
+      (x.minutes ? ' <span class="sub">· ' + x.minutes + ' min</span>' : '') + (x.how ? '<br><span class="sub">' + escapeHtml(x.how) + '</span>' : '') + '</span></label>').join('') + '</div>';
+    if (p.media.length) h += '<h4>🍿 Immerse yourself</h4><div class="media">' + p.media.map(m =>
+      '<div class="mitem"><div><b>' + (MEDIA_ICON[m.type] || '⭐') + ' ' + escapeHtml(m.title) + '</b> ' +
+      '<a href="' + searchUrl(m) + '" target="_blank" rel="noopener">find it ↗</a></div>' +
+      (m.why ? '<div class="sub">Why: ' + escapeHtml(m.why) + '</div>' : '') + (m.how ? '<div class="sub">How: ' + escapeHtml(m.how) + '</div>' : '') + '</div>').join('') +
+      '<div class="sub">Suggestions from your tutor — check availability and age ratings where you live.</div></div>';
+    return h;
+  }
+  function wirePlan(box, p) {
+    if (!p) return;
+    box.querySelectorAll('.pitem input').forEach(c => c.onchange = () => {
+      const t = planTicks(p);
+      t[c.dataset.i] = c.checked;
+      try { localStorage.setItem(planKey(p), JSON.stringify(t)); } catch (e) {}
+      const all = p.plan.length && p.plan.every((x, i) => t[i]);
+      if (c.checked) toast(all ? '🏆 Every exercise done — time for a retest!' : '✅ Nice — one more step on your journey.', all);
+    });
   }
 
   function closeProgress() {
@@ -866,6 +905,11 @@
         (t.workOn ? 'Focus on: ' + t.workOn + '. ' : '') + 'Try again in a week or two.' });
     render();
     saveLocal(l);
+    if ((t.plan && t.plan.length) || (t.media && t.media.length)) {
+      s.view.push({ who: 'cele', text: '📋 Your tutor made you a 2-week plan (' + (t.plan || []).length + ' exercises, ' + (t.media || []).length +
+        ' things to watch and listen to). Open 📈 Progress to see it and tick things off.' });
+      render();
+    }
     toast(t.passed ? '🏆 Test passed — ' + t.score + '/100!' : '📝 Test saved — ' + t.score + '/100', true);
     loadSummary(l);
   }
