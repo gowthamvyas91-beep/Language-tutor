@@ -70,6 +70,8 @@
     .ownactive { background: #fff8e1; border: 1px solid #f9d77e; border-radius: 10px; padding: 10px; margin: 8px 0; }
     .recent { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; align-items: center; }
     .chooser .quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+    .chooser.flash { animation: flash 1.2s 2; }
+    @keyframes flash { 50% { background: #fff8e1; } }
     .chooser { margin-top: 12px; border-top: 1px solid #eee; padding-top: 8px; }
     .resume { font-size: 12px; color: #555; background: #eef3fd; border-radius: 8px; padding: 6px 10px; margin: 4px 0; }
     #micBanner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff8e1;
@@ -397,13 +399,13 @@
   };
 
   const CHIPS = {
-    guided:   [['🙋 Ask', '__ask'], ['🐇 Faster voice', '__faster'], ['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
+    guided:   [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['🐇 Faster voice', '__faster'], ['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
                ['💬 Help me say it', 'Help me say it'], ['➡ Next step', 'Next']],
-    speaking: [['🙋 Ask', '__ask'], ['🐇 Faster voice', '__faster'], ['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
+    speaking: [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['🐇 Faster voice', '__faster'], ['🐢 Slower', 'Slower please'], ['❓ Meaning', 'What does that mean?'], ['🔁 Again', 'Say it again'],
                ['💬 Help me say it', 'Help me say it'], ['➡ Next', 'Next']],
-    reading:  [['🙋 Ask', '__ask'], ['📄 New passage', 'New passage'], ['❓ Meaning', 'What does that mean?'], ['🔤 Pinyin', 'Pinyin', 'zh'],
+    reading:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📄 New passage', 'New passage'], ['❓ Meaning', 'What does that mean?'], ['🔤 Pinyin', 'Pinyin', 'zh'],
                ['🔊 Read it to me', 'Read it to me'], ['➡ Next', 'Next']],
-    writing:  [['🙋 Ask', '__ask'], ['📝 New task', 'New task'], ['💡 Hint', 'Hint'], ['✅ Check', 'Check'],
+    writing:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📝 New task', 'New task'], ['💡 Hint', 'Hint'], ['✅ Check', 'Check'],
                ['👀 Show me', 'Show me'], ['➡ Next', 'Next']]
   };
 
@@ -721,6 +723,11 @@
     return box;
   }
 
+  // Tutor text with **bold** shown as bold. Everything is escaped first, so no HTML from the reply runs.
+  function richText(t) {
+    return escapeHtml(t).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  }
+
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
   // ---------- Saved settings ----------
@@ -831,7 +838,8 @@
     view.forEach((m, i) => {
       const d = document.createElement('div');
       d.className = 'msg ' + m.who + (m.q ? ' q' : '');
-      d.textContent = m.text;
+      if (m.who === 'tutor') d.innerHTML = richText(m.text);
+      else d.textContent = m.text;
       if (m.img) {
         const im = document.createElement('img');
         im.src = m.img;
@@ -964,6 +972,14 @@
   }
 
   function quick(text) {
+    if (text === '__topic') { // back to the welcome card, where you choose a topic
+      const s = state[lang()];
+      if (s.messages.length && !confirm('Choose a new topic? This ends the current session.')) return;
+      resetSession();
+      const box = document.querySelector('.chooser');
+      if (box) { box.scrollIntoView({ behavior: 'smooth', block: 'start' }); box.classList.add('flash'); }
+      return;
+    }
     if (text === '__ask') {
       if (!state[lang()].messages.length) { alert('Start a session first, then tap 🙋 Ask any time.'); return; }
       setAsk(!askNext);
