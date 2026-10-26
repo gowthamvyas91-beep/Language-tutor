@@ -141,6 +141,7 @@
     .syl { border-radius: 10px; padding: 6px 10px; text-align: center; min-width: 58px; border: 2px solid; }
     .syl .h { font-size: 22px; } .syl .p { font-size: 15px; font-weight: 600; } .syl .n { font-size: 11px; }
     .syl.ok { border-color: #34a853; background: #e6f4ea; } .syl.tone { border-color: #f9ab00; background: #fef7e0; } .syl.bad { border-color: #ea4335; background: #fce8e6; }
+    .pybtns .go.rec { background: #d93025; animation: pulse 1s infinite; }
     .pyverdict { text-align: center; font-size: 18px; font-weight: 700; margin: 6px 0 2px; }
     .pyverdict.good { color: #137333; }
     .pyb { display: grid; grid-template-columns: 90px 1fr 44px; gap: 8px; align-items: center; font-size: 13px; }
@@ -1074,22 +1075,53 @@
     speechSynthesis.speak(u);
   }
 
+  // Listen until you pause (not just one short burst). Tap again to stop early.
+  var pyRec = null;
   function pyListen(onDone) {
     if (!SR) { alert('Pronunciation checking needs speech recognition — use Chrome (desktop or Android) or Edge.'); return; }
+    if (pyRec) { try { pyRec.stop(); } catch (e) {} return; } // second tap = done speaking
     speechSynthesis.cancel();
     const r = new SR();
-    r.lang = 'zh-CN'; r.interimResults = false; r.maxAlternatives = 5; r.continuous = false;
-    const alts = [];
-    py.listening = true; renderPinyin();
+    pyRec = r;
+    r.lang = 'zh-CN'; r.interimResults = true; r.maxAlternatives = 5; r.continuous = true;
+    let finals = [], interim = '', heardAny = false, silence = null;
+    const quiet = ms => { clearTimeout(silence); silence = setTimeout(() => { try { r.stop(); } catch (e) {} }, ms); };
+    const maxTimer = setTimeout(() => { try { r.stop(); } catch (e) {} }, 9000);
+    py.listening = true; py.ready = false; py.micError = ''; renderPinyin();
+    r.onaudiostart = () => { py.ready = true; renderPinyin(); quiet(6000); }; // nothing said within 6 s → stop
     r.onresult = e => {
+      heardAny = true;
+      interim = '';
       for (let k = e.resultIndex; k < e.results.length; k++) {
         const res = e.results[k];
-        for (let a = 0; a < res.length; a++) alts.push(res[a].transcript);
+        if (res.isFinal) { const alts = []; for (let a = 0; a < res.length; a++) alts.push(res[a].transcript); finals.push(alts); }
+        else interim += res[0].transcript;
+      }
+      quiet(1300); // stop 1.3 s after you finish speaking
+    };
+    r.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') py.micError = 'Microphone blocked — allow it for this site (🔒 in the address bar) and try again.';
+      else if (e.error === 'audio-capture') py.micError = 'No microphone found. Check it is plugged in and selected in your system settings.';
+      else if (e.error === 'network') py.micError = 'Speech recognition needs an internet connection — check it and try again.';
+    };
+    r.onend = () => {
+      clearTimeout(silence); clearTimeout(maxTimer);
+      pyRec = null; py.listening = false; py.ready = false;
+      // combine the final pieces (first piece's alternatives × the rest's best guess), else use the partial text
+      let alts = [];
+      if (finals.length) {
+        const rest = finals.slice(1).map(f => f[0]).join('');
+        alts = finals[0].map(a => a + rest);
+        if (finals.length > 1) alts.push(finals.map(f => f[0]).join(''));
+      } else if (interim.trim()) alts = [interim];
+      if (alts.length) { py.micError = ''; onDone(alts); }
+      else {
+        if (!py.micError) py.micError = heardAny ? 'I couldn\'t make out the words — try once more, a little louder.'
+          : 'I didn\'t catch that. Wait for 🔴 Speak now, then say it clearly. For a single sound, saying it twice helps (e.g. táng táng).';
+        renderPinyin();
       }
     };
-    r.onerror = e => { py.micError = e.error === 'not-allowed' ? 'Microphone blocked — allow it in the browser and try again.' : e.error === 'no-speech' ? 'I didn\'t hear anything. Tap 🎤 and speak right away.' : 'Didn\'t catch that (' + e.error + ').'; };
-    r.onend = () => { py.listening = false; if (alts.length) { py.micError = ''; onDone(alts); } else { if (!py.micError) py.micError = 'I didn\'t hear anything. Tap 🎤 and speak right away.'; renderPinyin(); } };
-    try { r.start(); } catch (e) { py.listening = false; }
+    try { r.start(); } catch (e) { pyRec = null; py.listening = false; py.micError = 'The microphone is busy — wait a second and tap 🎤 again.'; renderPinyin(); }
   }
 
   function pyItem() { return py.drill && py.drill.items[py.idx]; }
@@ -1202,7 +1234,7 @@
         (py.micError ? '<div class="loginerr">' + escapeHtml(py.micError) + '</div>' : '') +
         '<div class="pybtns">' +
           (py.check ? '' : '<button class="secondary" id="pyHear">🔊 Listen</button><button class="secondary" id="pySlow">🐢 Slow</button>') +
-          '<button class="go" id="pyMic"' + (py.listening ? ' disabled' : '') + '>' + (py.listening ? '👂 Listening…' : g && !g.ok && !py.check ? '🎤 Try again' : '🎤 Say it') + '</button>' +
+          '<button class="go' + (py.listening && py.ready ? ' rec' : '') + '" id="pyMic">' + (py.listening ? (py.ready ? '🔴 Speak now… (tap when done)' : '⏳ Starting mic…') : g && !g.ok && !py.check ? '🎤 Try again' : '🎤 Say it') + '</button>' +
           '<button class="secondary" id="pyNext">' + (g && (g.ok || py.tries >= 3) ? 'Next ▶' : '⏭ Skip') + '</button>' +
         '</div>';
       const q = s => div.querySelector(s);
@@ -1695,7 +1727,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-27-langfix2';
+  const APP_VERSION = '2026-10-27-mic';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
