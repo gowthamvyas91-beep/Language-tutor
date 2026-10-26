@@ -129,6 +129,22 @@
     .pitem input:checked + span b { text-decoration: line-through; color: #777; }
     .mitem { padding: 6px 0; border-top: 1px solid #f1f3f4; font-size: 14px; }
     .mitem a { font-size: 12px; color: #1a73e8; }
+    body.pinyin .row, body.pinyin #chips, body.pinyin #phases, body.pinyin #pad { display: none !important; }
+    .pyhead { display: flex; justify-content: space-between; align-items: center; }
+    .pyword { font-size: 52px; text-align: center; margin: 14px 0 2px; letter-spacing: 4px; }
+    .pypy { font-size: 22px; text-align: center; color: #1a4fb0; margin-bottom: 2px; }
+    .pytip { background: #e8f0fe; border-radius: 8px; padding: 8px 10px; margin: 8px 0; font-size: 14px; }
+    .pybtns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .pybtns .go { flex: 2; padding: 14px; border-radius: 10px; font-size: 17px; }
+    .pybtns .secondary { flex: 1; }
+    .sylrow { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 10px 0 4px; }
+    .syl { border-radius: 10px; padding: 6px 10px; text-align: center; min-width: 58px; border: 2px solid; }
+    .syl .h { font-size: 22px; } .syl .p { font-size: 15px; font-weight: 600; } .syl .n { font-size: 11px; }
+    .syl.ok { border-color: #34a853; background: #e6f4ea; } .syl.tone { border-color: #f9ab00; background: #fef7e0; } .syl.bad { border-color: #ea4335; background: #fce8e6; }
+    .pyverdict { text-align: center; font-size: 18px; font-weight: 700; margin: 6px 0 2px; }
+    .pyverdict.good { color: #137333; }
+    .pyb { display: grid; grid-template-columns: 90px 1fr 44px; gap: 8px; align-items: center; font-size: 13px; }
+    .pyb .bar100 { margin: 0; }
     .msg.cele { background: linear-gradient(135deg, #fff8e1, #e6f4ea); border: 1px solid #f9d77e; font-weight: 600; max-width: 100%; }
     #toast { position: fixed; left: 50%; bottom: 90px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; z-index: 60;
       background: #202124; color: #fff; border-radius: 12px; padding: 10px 16px; font-size: 14px; max-width: 92vw; text-align: center;
@@ -156,6 +172,7 @@
       <option value="reading">📖 Reading</option>
       <option value="writing">✏️ Writing</option>
       <option value="test">🧪 Level test</option>
+      <option value="pinyin">🎯 Pinyin & tones</option>
     </select>
     <select id="audience" onchange="onAudienceChange()" title="Who is learning: sets age-appropriate themes">
       <option value="adults">🧑 Adults</option>
@@ -473,7 +490,8 @@
     writing:  [['', 'Any activity'], ['Dictation', '🎧 Dictation'], ['Sentence building', '🧱 Sentence building'],
                ['Reply to a message', '📱 Reply to a message'], ['Mini diary', '📓 Mini diary'],
                ['Character practice', '字 Character practice', 'script']],
-    test:     [['', 'Level test']]
+    test:     [['', 'Level test']],
+    pinyin:   [['', 'Pinyin']]
   };
 
   const CHIPS = {
@@ -485,6 +503,7 @@
                ['🔊 Read it to me', 'Read it to me'], ['➡ Next', 'Next']],
     writing:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📝 New task', 'New task'], ['💡 Hint', 'Hint'], ['✅ Check', 'Check'],
                ['👀 Show me', 'Show me'], ['➡ Next', 'Next']],
+    pinyin:   [],
     test:     [['🔁 Again', 'Say it again'], ['🐢 Slower', 'Slower please'], ['⏭ Skip task', "I don't know — next task please"], ['🏁 Finish & score', '__finishtest']]
   };
 
@@ -493,11 +512,16 @@
     speaking: 'Tap 🎤 and speak; it sends after the ⏱ pause, or tap ⏹. Tap a message to hear it again.',
     reading: 'Read the passage, then answer the questions. Bold = new words.',
     writing: 'Type your answer, or tap ✏️ to handwrite (great for Chinese characters).',
+    pinyin: 'Tap 🔊 to hear, 🎤 to say it. Green = right, orange = tone, red = sound.',
     test: '8 short speaking tasks, no help during the test. Answer with 🎤 if you can — it is scored out of 100 at the end.'
   };
 
   function buildSkillUI() {
     const l = lang();
+    const pyOpt = document.querySelector('#skill option[value="pinyin"]');
+    if (pyOpt) pyOpt.hidden = pyOpt.disabled = l !== 'zh';
+    if (skill === 'pinyin' && l !== 'zh') { skill = 'guided'; document.getElementById('skill').value = 'guided'; }
+    document.body.classList.toggle('pinyin', skill === 'pinyin');
     document.body.classList.toggle('reading', skill === 'reading');
     document.getElementById('hint').textContent = HINTS[skill];
 
@@ -522,7 +546,7 @@
 
     document.getElementById('padBtn').style.display = (skill === 'writing' || skill === 'guided') ? '' : 'none';
     if (skill !== 'writing' && skill !== 'guided') document.getElementById('pad').classList.remove('open');
-    act.style.display = (skill === 'guided' || skill === 'test') ? 'none' : '';
+    act.style.display = (skill === 'guided' || skill === 'test' || skill === 'pinyin') ? 'none' : '';
     renderPhases();
     if (!state[l].view.length) render(); // refresh the welcome card
   }
@@ -942,6 +966,273 @@
     if (/\[Test complete\]/i.test(text)) { done = true; text = text.replace(/\[Test complete\]/ig, '').trim() || '✅ That was the last task!'; }
     renderPhases();
     return { text: text, done: done };
+  }
+
+
+  // ---------- Pinyin & tones trainer (Chinese) ----------
+  // Free check in the browser: speech recognition (zh-CN, several guesses) → characters → pinyin-pro →
+  // compare every syllable's initial, final and tone with the target.
+  var py = { screen: 'start', drill: null, idx: 0, tries: 0, results: [], first: null, check: false, focus: 'auto', recent: [], stats: null, last: null, busy: false };
+  const PY_TIPS = {
+    T1: 'Tone 1 ¯ — high and flat, like holding a note: «妈».',
+    T2: 'Tone 2 ´ — rises, like a surprised “huh?”: «麻».',
+    T3: 'Tone 3 ˇ — go low. Alone it dips and rises; before another syllable just stay low. Two 3rd tones: the first becomes 2nd («你好» = ní hǎo).',
+    T4: 'Tone 4 ` — a sharp fall, like a firm “No!”: «骂».',
+    retro: 'zh ch sh r — curl the tongue tip back toward the roof of your mouth.',
+    flat: 'z c s — tongue tip flat behind your top teeth, no curl.',
+    palatal: 'j q x — tongue tip down behind your lower teeth, lips in a smile.',
+    u: 'ü — say “ee”, then round your lips like “oo” without moving your tongue.',
+    ng: '-ng — the back of the tongue goes up, like the end of “sing”.',
+    n: '-n — the tongue tip touches behind the top teeth, like the end of “ten”.',
+    other: 'Listen again at slow speed, copy the melody, then say it a little slower.'
+  };
+  const PY_FOCUS_LIST = [['auto', '🧠 Auto — my weakest sounds'], ['tones', 'The four tones'], ['pairs', 'Tone pairs'], ['t3', 'Third-tone changes'],
+    ['yibu', '一 and 不 tone changes'], ['zcs', 'zh ch sh r vs z c s'], ['jqx', 'j q x and ü'], ['nng', '-n vs -ng'], ['finals', 'Tricky finals'], ['phrases', 'Phrases & sentences']];
+
+  function loadPinyinLib() {
+    if (window.pinyinPro) return Promise.resolve();
+    if (loadPinyinLib.p) return loadPinyinLib.p;
+    loadPinyinLib.p = new Promise((ok, bad) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/pinyin-pro@3.26.0/dist/index.js';
+      sc.onload = ok; sc.onerror = () => { loadPinyinLib.p = null; bad(new Error('Could not load the pinyin checker — check your connection.')); };
+      document.head.appendChild(sc);
+    });
+    return loadPinyinLib.p;
+  }
+
+  function sylls(text) {
+    return pinyinPro.pinyin(String(text), { type: 'all', toneType: 'none', nonZh: 'removed' })
+      .filter(x => x.isZh).map(x => ({ ch: x.origin, i: x.initial || '', f: x.final || '', t: x.num || 0 }));
+  }
+  function marked(text) { return pinyinPro.pinyin(String(text), { type: 'array', nonZh: 'removed' }); }
+
+  // Align heard syllables to target syllables (edit distance), then grade each target syllable.
+  function grade(target, heardText) {
+    const T = sylls(target), H = sylls(heardText);
+    const cost = (a, b) => (a.i !== b.i ? 1 : 0) + (a.f !== b.f ? 1 : 0) + (a.t !== b.t && a.t ? 1 : 0);
+    const n = T.length, m = H.length, D = [];
+    for (let x = 0; x <= n; x++) { D[x] = []; for (let y = 0; y <= m; y++) D[x][y] = x === 0 ? y * 3 : y === 0 ? x * 3 : 0; }
+    for (let x = 1; x <= n; x++) for (let y = 1; y <= m; y++)
+      D[x][y] = Math.min(D[x - 1][y - 1] + cost(T[x - 1], H[y - 1]), D[x - 1][y] + 3, D[x][y - 1] + 3);
+    const out = new Array(n);
+    let x = n, y = m;
+    while (x > 0) {
+      if (y > 0 && D[x][y] === D[x - 1][y - 1] + cost(T[x - 1], H[y - 1])) { out[x - 1] = H[y - 1]; x--; y--; }
+      else if (D[x][y] === D[x - 1][y] + 3) { out[x - 1] = null; x--; }
+      else y--;
+    }
+    const res = T.map((s, k) => {
+      const h = out[k];
+      return { ch: s.ch, i: s.i, f: s.f, t: s.t, heard: h,
+        okI: !!h && h.i === s.i, okF: !!h && h.f === s.f, okT: !!h && (s.t === 0 || h.t === s.t) };
+    });
+    const pts = res.reduce((a, r) => a + r.okI + r.okF + 2 * r.okT, 0);
+    return { sylls: res, score: n ? pts / (4 * n) : 0, ok: res.every(r => r.okI && r.okF && r.okT), extra: Math.max(0, m - n) };
+  }
+
+  function bestGrade(target, alts) {
+    const clean = s => String(s).replace(/[\s，。！？、,.!?]/g, '');
+    let best = null;
+    alts.forEach(a => {
+      const g = clean(a) === clean(target) ? Object.assign(grade(target, target), { exact: true }) : grade(target, a);
+      g.text = a;
+      if (!best || g.score > best.score) best = g;
+    });
+    return best || Object.assign(grade(target, ''), { text: '' });
+  }
+
+  function pyTipFor(g) {
+    const bad = g.sylls.find(r => !(r.okI && r.okF && r.okT));
+    if (!bad) return '';
+    if (!bad.heard) return 'I didn\'t catch «' + bad.ch + '». Say every syllable clearly, a bit slower.';
+    if (!bad.okI) return /^(zh|ch|sh|r)$/.test(bad.i) ? PY_TIPS.retro : /^(z|c|s)$/.test(bad.i) ? PY_TIPS.flat : /^(j|q|x)$/.test(bad.i) ? PY_TIPS.palatal : PY_TIPS.other;
+    if (!bad.okF) return /ü/.test(bad.f) ? PY_TIPS.u : /ng$/.test(bad.f) ? PY_TIPS.ng : /n$/.test(bad.f) ? PY_TIPS.n : PY_TIPS.other;
+    return PY_TIPS['T' + bad.t] || PY_TIPS.other;
+  }
+
+  function pySay(text, slow) {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN';
+    const v = pickVoice('zh'); if (v) u.voice = v;
+    u.rate = slow ? 0.45 : 0.75;
+    speechSynthesis.speak(u);
+  }
+
+  function pyListen(onDone) {
+    if (!SR) { alert('Pronunciation checking needs speech recognition — use Chrome (desktop or Android) or Edge.'); return; }
+    speechSynthesis.cancel();
+    const r = new SR();
+    r.lang = 'zh-CN'; r.interimResults = false; r.maxAlternatives = 5; r.continuous = false;
+    const alts = [];
+    py.listening = true; renderPinyin();
+    r.onresult = e => {
+      for (let k = e.resultIndex; k < e.results.length; k++) {
+        const res = e.results[k];
+        for (let a = 0; a < res.length; a++) alts.push(res[a].transcript);
+      }
+    };
+    r.onerror = e => { py.micError = e.error === 'not-allowed' ? 'Microphone blocked — allow it in the browser and try again.' : e.error === 'no-speech' ? 'I didn\'t hear anything. Tap 🎤 and speak right away.' : 'Didn\'t catch that (' + e.error + ').'; };
+    r.onend = () => { py.listening = false; if (alts.length) { py.micError = ''; onDone(alts); } else { if (!py.micError) py.micError = 'I didn\'t hear anything. Tap 🎤 and speak right away.'; renderPinyin(); } };
+    try { r.start(); } catch (e) { py.listening = false; }
+  }
+
+  function pyItem() { return py.drill && py.drill.items[py.idx]; }
+
+  function pyAttempt(alts) {
+    const it = pyItem();
+    const g = bestGrade(it.hanzi, alts);
+    py.last = g;
+    if (!py.first) py.first = g; // stats use the first try, so progress is honest
+    py.tries++;
+    renderPinyin();
+    if (py.check) { setTimeout(() => pyNext(), 900); return; }
+    if (g.ok) { setTimeout(() => { if (py.last === g) pyNext(); }, 1400); }
+  }
+
+  function pyNext() {
+    const it = pyItem();
+    if (it && (py.first || py.check)) { // a practice item skipped without trying isn't scored
+      const g = py.first;
+      py.results.push({ hanzi: it.hanzi, ok: !!(g && g.ok), sylls: (g ? g.sylls : sylls(it.hanzi).map(s => Object.assign(s, { okI: false, okF: false, okT: false })))
+        .map(r => ({ i: /^[yw]?$/.test(r.i) ? '' : r.i, f: r.f, t: r.t, okI: r.okI, okF: r.okF, okT: r.okT })) });
+      py.recent.push(it.hanzi);
+    }
+    py.idx++; py.tries = 0; py.first = null; py.last = null; py.micError = '';
+    if (py.idx >= py.drill.items.length) return pyFinishRound();
+    renderPinyin();
+    setTimeout(() => { const n = pyItem(); if (n && !py.check) pySay(n.hanzi); }, 250);
+  }
+
+  function pyStart(check) {
+    py.check = !!check;
+    py.screen = 'loading'; py.error = '';
+    renderPinyin();
+    Promise.all([loadPinyinLib(), call('getPinyinDrill', 'zh', levels.zh, check ? 'check' : py.focus, py.recent.slice(-60))])
+      .then(r => {
+        const d = r[1];
+        d.items = d.items.filter(x => sylls(x.hanzi).length);
+        py.drill = d; py.idx = 0; py.tries = 0; py.results = []; py.first = null; py.last = null; py.screen = 'item';
+        renderPinyin();
+        if (!check) pySay(d.items[0].hanzi);
+      })
+      .catch(err => { py.screen = 'start'; py.error = err.message; renderPinyin(); });
+  }
+
+  function pyFinishRound() {
+    py.screen = 'saving'; renderPinyin();
+    const before = py.stats;
+    call('savePinyinResults', 'zh', py.results, py.check).then(st => {
+      py.stats = st; py.prevStats = before; py.screen = 'summary'; renderPinyin();
+      if (st.check) toast(st.check.change > 0 ? '📈 Pronunciation check: ' + st.check.score + '/100 — up ' + st.check.change + ' points!' : '🧪 Pronunciation check: ' + st.check.score + '/100', true);
+      else toast(st.roundScore >= 90 ? '🌟 ' + st.roundScore + '% — beautiful tones!' : st.roundScore >= 70 ? '👏 ' + st.roundScore + '% — getting there!' : '💪 ' + st.roundScore + '% — every round trains your ear and mouth.');
+      loadSummary('zh');
+    }).catch(err => { py.screen = 'summary'; py.error = err.message; renderPinyin(); });
+  }
+
+  function pyLoadStats() {
+    call('getPinyinStats', 'zh').then(st => { py.stats = st; if (skill === 'pinyin') renderPinyin(); }).catch(() => {});
+  }
+
+  function bars(list) {
+    return list.map(x => '<div class="pyb"><span>' + escapeHtml(x.label) + '</span><div class="bar100"><div style="width:' + x.pct + '%;background:' +
+      (x.pct >= 85 ? '#34a853' : x.pct >= 60 ? '#fbbc04' : '#ea4335') + '"></div></div><b>' + (x.n ? x.pct + '%' : '—') + '</b></div>').join('');
+  }
+
+  function statsHtml(st) {
+    if (!st || !st.items) return '<div class="sub">No practice yet — your sound-by-sound scores will appear here.</div>';
+    return '<h4>Tones <span class="sub">(last 20 tries each)</span></h4>' + bars(st.tones) +
+      (st.weakest.length ? '<h4>Practising next</h4>' + bars(st.weakest) : '') +
+      (st.mastered.length ? '<h4>🏅 Mastered</h4><div class="recent">' + st.mastered.map(x => '<span class="chip on">' + escapeHtml(x) + '</span>').join('') + '</div>' : '') +
+      (st.checks.length ? '<h4>Pronunciation checks</h4>' + st.checks.map(c => '<div class="trow"><span>' + c.date + '</span><b>' + c.score + '/100 · tones ' + c.tones + '%' +
+        (c.change != null ? (c.change >= 0 ? ' · ▲' + c.change : ' · ▼' + (-c.change)) : '') + '</b></div>').join('') : '') +
+      '<div class="sub" style="margin-top:6px">' + st.items + ' items practised · ' + st.soundsTracked + ' sounds tracked</div>';
+  }
+
+  function sylHtml(g) {
+    return '<div class="sylrow">' + g.sylls.map((r, k) => {
+      const mk = marked(r.ch)[0] || '';
+      const cls = r.okI && r.okF && r.okT ? 'ok' : (r.okI && r.okF) ? 'tone' : 'bad';
+      const heard = r.heard ? pinyinPro.convert((r.heard.i + r.heard.f).replace(/^([jqxy])ü/, '$1u') + (r.heard.t || ''), { format: 'numToSymbol' }) : '—';
+      return '<div class="syl ' + cls + '"><div class="h">' + escapeHtml(r.ch) + '</div><div class="p">' + escapeHtml(mk) + '</div>' +
+        (cls === 'ok' ? '<div class="n">✓</div>' : '<div class="n">heard ' + escapeHtml(heard) + '</div>') + '</div>';
+    }).join('') + '</div>';
+  }
+
+  function renderPinyin() { if (skill === 'pinyin' && lang() === 'zh' && !loginShown && !setupShown) render(); }
+
+  function pinyinCard() {
+    const div = document.createElement('div');
+    div.className = 'welcome pycard';
+    const st = py.stats;
+    if (py.screen === 'loading' || py.screen === 'saving') {
+      div.innerHTML = '<h3>🎯 Pinyin & tones</h3><div class="sub">' + (py.screen === 'loading' ? 'Making your next drill…' : 'Saving your scores…') + '</div>';
+      return div;
+    }
+    if (py.screen === 'item' && pyItem()) {
+      const it = pyItem(), g = py.last;
+      const n = py.drill.items.length;
+      div.innerHTML = '<div class="pyhead"><b>' + (py.check ? '🧪 Pronunciation check' : '🎯 ' + escapeHtml(py.drill.focusName)) + '</b><span class="sub">' + (py.idx + 1) + ' / ' + n + '</span></div>' +
+        '<div class="bar100"><div style="width:' + Math.round(100 * py.idx / n) + '%"></div></div>' +
+        '<div class="pyword">' + escapeHtml(it.hanzi) + '</div>' +
+        '<div class="pypy">' + escapeHtml(marked(it.hanzi).join(' ')) + '</div>' +
+        '<div class="sub" style="text-align:center">' + escapeHtml(it.meaning || '') + '</div>' +
+        (it.tip && !py.check ? '<div class="sub pytip">💡 ' + escapeHtml(it.tip) + '</div>' : '') +
+        (g ? (py.check ? '<div class="pyverdict">Saved — next one…</div>'
+          : sylHtml(g) + '<div class="pyverdict ' + (g.ok ? 'good' : '') + '">' +
+            (g.ok ? ['✅ Perfect!', '🌟 Excellent!', '✅ Spot on!'][py.idx % 3]
+              : (py.tries >= 3 ? 'Good effort — let\'s move on and come back to it later.' : 'Close! Try again.')) + '</div>' +
+            '<div class="sub" style="text-align:center">I heard: ' + escapeHtml(g.text || '—') + '</div>' +
+            (!g.ok ? '<div class="pytip">💡 ' + pyTipFor(g).replace(/«([^»]+)»/g, '<b>$1</b>') + '</div>' : '')) : '') +
+        (py.micError ? '<div class="loginerr">' + escapeHtml(py.micError) + '</div>' : '') +
+        '<div class="pybtns">' +
+          (py.check ? '' : '<button class="secondary" id="pyHear">🔊 Listen</button><button class="secondary" id="pySlow">🐢 Slow</button>') +
+          '<button class="go" id="pyMic"' + (py.listening ? ' disabled' : '') + '>' + (py.listening ? '👂 Listening…' : g && !g.ok && !py.check ? '🎤 Try again' : '🎤 Say it') + '</button>' +
+          '<button class="secondary" id="pyNext">' + (g && (g.ok || py.tries >= 3) ? 'Next ▶' : '⏭ Skip') + '</button>' +
+        '</div>';
+      const q = s => div.querySelector(s);
+      if (q('#pyHear')) { q('#pyHear').onclick = () => pySay(it.hanzi); q('#pySlow').onclick = () => pySay(it.hanzi, true); }
+      q('#pyMic').onclick = () => pyListen(pyAttempt);
+      q('#pyNext').onclick = pyNext;
+      return div;
+    }
+    if (py.screen === 'summary') {
+      const c = st && st.check;
+      const pr = py.results.length ? Math.round(100 * py.results.filter(r => r.ok).length / py.results.length) : 0;
+      div.innerHTML = '<h3>' + (c ? '🧪 Pronunciation check: ' + c.score + '/100' : '🎉 Round complete') + '</h3>' +
+        (py.error ? '<div class="loginerr">' + escapeHtml(py.error) + '</div>' : '') +
+        (c ? '<div class="cheer">' + (c.change == null ? 'Your first check — this is your starting line. Practise and retest in a few days.'
+            : c.change > 0 ? 'Up ' + c.change + ' points since your last check. Your practice is working! 🚀'
+            : c.change === 0 ? 'Steady. The weak sounds below are where the next points are.' : 'A dip happens — tiredness and noise matter. The drills below will bring it back.') +
+            ' Tone accuracy: ' + c.tones + '%.</div>'
+          : '<div class="cheer">' + pr + '% of items perfect on the first try' + (st ? ' · round score ' + st.roundScore + '%' : '') + '. ' +
+            (pr >= 80 ? 'Excellent — your tones are sticking!' : pr >= 50 ? 'Good progress — repetition is exactly how tones become automatic.' : 'This is the hard part of Chinese, and you are doing it. Keep going!') + '</div>') +
+        (st && st.clear ? '<div class="cheer">🏅 <b>Clear pronunciation</b> — check score 85+ and every tone 85%+. Keep a short round going to stay sharp.</div>' : '') +
+        (st ? '<div class="sub">Next focus: <b>' + escapeHtml(st.nextFocus) + '</b></div>' : '') +
+        '<div class="pybtns"><button class="go" id="pyMore">▶ Keep going</button><button class="secondary" id="pyCheck">🧪 Check</button></div>' +
+        '<details><summary>📊 My sounds</summary>' + statsHtml(st) + '</details>';
+      div.querySelector('#pyMore').onclick = () => pyStart(false);
+      div.querySelector('#pyCheck').onclick = () => pyStart(true);
+      return div;
+    }
+    // start screen
+    div.innerHTML = '<h3>🎯 Pinyin & tones</h3>' +
+      '<div class="sub">Unlimited pronunciation practice: hear it, say it, and see every syllable checked — initial, final and tone. ' +
+      'Rounds of 10 adapt to your weakest sounds and never run out.</div>' +
+      (py.error ? '<div class="loginerr">' + escapeHtml(py.error) + '</div>' : '') +
+      '<label class="lbl">Focus</label><select id="pyFocus" class="txt">' + PY_FOCUS_LIST.map(f => '<option value="' + f[0] + '"' + (f[0] === py.focus ? ' selected' : '') + '>' + f[1] + '</option>').join('') + '</select>' +
+      '<div class="pybtns"><button class="go" id="pyGo">▶ Start practice</button><button class="secondary" id="pyCheck">🧪 Pronunciation check (20)</button></div>' +
+      (st && st.clear ? '<div class="cheer">🏅 Clear pronunciation badge earned.</div>' : '') +
+      '<details' + (st && st.items ? ' open' : '') + '><summary>📊 My sounds</summary>' + statsHtml(st) + '</details>' +
+      '<div class="sub">How it is checked: your browser\'s Chinese speech recognition writes down what it heard, and each syllable is compared with the target. ' +
+      'It reliably catches wrong sounds and many wrong tones, but it can be lenient (it may guess the word you meant). Use a quiet room and speak at normal volume.</div>';
+    div.querySelector('#pyFocus').onchange = e => { py.focus = e.target.value; };
+    div.querySelector('#pyGo').onclick = () => pyStart(false);
+    div.querySelector('#pyCheck').onclick = () => pyStart(true);
+    if (!st) pyLoadStats();
+    return div;
   }
 
   // ---------- Topic navigation ----------
@@ -1460,7 +1751,7 @@
   function onSkillChange() {
     const next = document.getElementById('skill').value;
     const s = state[lang()];
-    if (s.messages.length && s.skill && s.skill !== next) {
+    if (s.messages.length && s.skill && s.skill !== next && next !== 'pinyin') {
       if (!confirm('Switching skill ends the session in progress. Continue?')) {
         document.getElementById('skill').value = skill;
         return;
@@ -1480,6 +1771,7 @@
     hideTip();
     const log = document.getElementById('log');
     log.innerHTML = '';
+    if (skill === 'pinyin' && lang() === 'zh') { log.appendChild(pinyinCard()); return; }
     const view = state[lang()].view;
     if (!view.length) { log.appendChild(welcomeCard()); return; }
     const st = state[lang()];
