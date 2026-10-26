@@ -182,11 +182,38 @@
 
   const NEED_LOGIN = 'NEED_LOGIN';
 
+  // Network failures ("Failed to fetch") are retried once after a short wait; if it still fails,
+  // a quick ping tells apart "no internet / wrong link" from "the server had a problem with this request".
   function call(fn, ...args) {
     if (IN_GOOGLE) {
       return new Promise((resolve, reject) =>
         google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(fn, args));
     }
+    return callOnce(fn, args).catch(err => {
+      if (!err || !err.network) throw err;
+      return new Promise(r => setTimeout(r, 2000)).then(() => callOnce(fn, args)).catch(err2 => {
+        if (!err2 || !err2.network) throw err2;
+        return diagnose().then(msg => { throw new Error(msg); });
+      });
+    });
+  }
+
+  function diagnose() {
+    const c = getConfig();
+    if (!navigator.onLine) return Promise.resolve('Your phone is offline. Reconnect, then tap ↻ Retry.');
+    const sep = c.url.indexOf('?') >= 0 ? '&' : '?';
+    return fetch(c.url + sep + 'ping=1')
+      .then(r => r.text())
+      .then(t => {
+        let d = null;
+        try { d = JSON.parse(t); } catch (e) {}
+        if (d && d.ok) return 'The tutor server is up, but this message failed — usually it took too long, or the server was being updated. Tap ↻ Retry.';
+        return 'The tutor server link answered with a page instead of data — the newest code may not be deployed yet (Manage deployments → Edit → New version). Then tap ↻ Retry.';
+      })
+      .catch(() => 'Can\'t reach the tutor server. Check your internet, or tap ⚙ to check the server link, then tap ↻ Retry.');
+  }
+
+  function callOnce(fn, args) {
     const c = getConfig();
     if (!c.url || !c.code) return Promise.reject(new Error(NEED_LOGIN));
     return fetch(c.url, {
@@ -208,7 +235,9 @@
         if (d.error) throw new Error(d.error);
         return d.result;
       }, err => {
-        throw new Error('Could not reach the tutor server (' + err.message + '). Check your internet connection.');
+        const e = new Error('Could not reach the tutor server (' + err.message + ').');
+        e.network = true;
+        throw e;
       });
   }
 
@@ -701,6 +730,14 @@
         d.appendChild(im);
       }
       if (m.who === 'tutor') d.onclick = () => speak(m.text, lang(), true);
+      if (m.who === 'err' && m.retry && i === view.length - 1) {
+        const b = document.createElement('button');
+        b.className = 'redo';
+        b.style.marginLeft = '8px';
+        b.textContent = '↻ Retry';
+        b.onclick = () => retryLast(m);
+        d.appendChild(b);
+      }
       log.appendChild(d);
 
       if (m.who === 'tutor' && m.model) {
@@ -911,12 +948,23 @@
         else refreshPlan();
       })
       .catch(err => {
-        // Drop the learner's unanswered turn so history stays valid
-        if (s.messages.length && isHumanTurn(s.messages[s.messages.length - 1])) s.messages.pop();
-        s.view[s.view.length - 1] = { who: 'err', text: 'Error: ' + err.message };
+        // Drop the learner's unanswered turn so history stays valid, but keep it for ↻ Retry
+        let failed = null;
+        if (s.messages.length && isHumanTurn(s.messages[s.messages.length - 1])) failed = s.messages.pop();
+        s.view[s.view.length - 1] = { who: 'err', text: 'Error: ' + err.message, retry: failed, mode: useMode };
         setBusy(false);
         render();
       });
+  }
+
+  // Resend the message that failed (same text, no retyping).
+  function retryLast(m) {
+    const l = lang();
+    const s = state[l];
+    if (document.getElementById('sendBtn').disabled) return;
+    s.view.pop();               // the error bubble; the learner's bubble stays
+    s.messages.push(m.retry);
+    runTurn(l, m.mode || mode);
   }
 
   function redoWithSonnet(e) {
