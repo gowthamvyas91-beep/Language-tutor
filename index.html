@@ -155,7 +155,7 @@
 </head>
 <body>
   <div class="bar">
-    <select id="lang" onchange="onLangChange()">
+    <select id="lang" onchange="onLangChange()" autocomplete="off">
       <option value="zh">🇨🇳 Mandarin</option>
       <option value="es">🇦🇷 Argentine Spanish</option>
       <option value="de">🇩🇪 German</option>
@@ -190,6 +190,7 @@
     <button class="secondary" id="spk" onclick="toggleSpeak()">🔊 On</button>
     <button class="secondary" id="progBtn" onclick="showProgress()" title="Goals, streak and tests">📈</button>
     <button class="secondary" id="wordBtn" onclick="toggleWords()" title="Tap or hover a word to see its meaning">🔍 Words</button>
+    <span class="sub" id="ver" style="align-self:center;font-size:11px;color:#999"></span>
     <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Switch learner / settings" style="display:none">⚙</button>
   </div>
   <div class="hint"><span id="who" class="who" style="display:none"></span> <span id="hint"></span></div>
@@ -579,11 +580,14 @@
 
   // Pull "[Phase N/7: Name]" off the reply, update the bar, and return the text without it.
   function takePhase(text, l) {
-    const m = text.match(/^\s*\[Phase (\d)\/7:[^\]]*\]\s*/);
-    if (!m) return text;
-    phase[l] = Number(m[1]);
+    // the tag can come after a short intro line, so look anywhere; keep the highest phase if there are several
+    const re = /\[Phase (\d)\/7:[^\]]*\]/g;
+    let m, found = 0;
+    while ((m = re.exec(text))) found = Math.max(found, Number(m[1]));
+    if (!found) return text;
+    phase[l] = found;
     renderPhases();
-    return text.slice(m[0].length);
+    return text.replace(/[ \t]*\[Phase \d\/7:[^\]]*\][ \t]*\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   function welcomeCard() {
@@ -591,6 +595,7 @@
     const p = plan[l];
     const div = document.createElement('div');
     div.className = 'welcome';
+    div.dataset.lang = l;
     const name = langInfo(l).name;
     if (skill === 'guided') {
       const kindIcon = p ? ({ review: '🔁 ', milestone: '🏁 ' }[p.kind] || '') : '';
@@ -624,10 +629,18 @@
       div.appendChild(b);
       // …or choose any topic: tap, pick from the list, or type
       const cinfo = p && p.custom;
-      div.appendChild(topicChooser(t => startCustom(t), {
+      div.appendChild(topicChooser(t => { keepLang(l); startCustom(t); }, {
         recent: cinfo && cinfo.recent,
         note: 'Full 7-step session on your topic, and it never runs out: each new session takes a new angle. Your place in the 100 topics stays the same.'
       }));
+      if (l === 'zh') {
+        const pb = document.createElement('button');
+        pb.className = 'secondary';
+        pb.style.cssText = 'width:100%;margin-top:8px';
+        pb.textContent = '🎯 Pinyin & tones trainer — unlimited pronunciation practice';
+        pb.onclick = openPinyin;
+        div.insertBefore(pb, div.querySelector('.chooser'));
+      }
       if (cinfo && cinfo.active) {
         const box = document.createElement('div');
         box.className = 'ownactive';
@@ -676,7 +689,7 @@
     } else {
       div.appendChild(progressStrip());
       div.insertAdjacentHTML('afterbegin', '<h3>' + name + ' · ' + skill + '</h3><div class="sub">Pick an activity above (or leave "Any") and tap Start — or choose a topic below.</div>');
-      div.appendChild(topicChooser(t => startSession(t), {
+      div.appendChild(topicChooser(t => { keepLang(l); startSession(t); }, {
         note: 'The ' + skill + ' session will use this topic, with the activity chosen above.'
       }));
     }
@@ -960,8 +973,8 @@
   }
 
   function takeTask(text, l) {
-    const m = text.match(/^\s*\[Task (\d)\/8\]\s*/);
-    if (m) { testTask[l] = Number(m[1]); text = text.slice(m[0].length); }
+    const m = text.match(/\[Task (\d)\/8\]/);
+    if (m) { testTask[l] = Number(m[1]); text = text.replace(/[ \t]*\[Task \d\/8\][ \t]*\n?/g, '').trim(); }
     let done = false;
     if (/\[Test complete\]/i.test(text)) { done = true; text = text.replace(/\[Test complete\]/ig, '').trim() || '✅ That was the last task!'; }
     renderPhases();
@@ -1311,6 +1324,7 @@
     sel.appendChild(m);
     sel.value = myLangs.indexOf(want) >= 0 ? want : (myLangs[0] || '__setup');
     lastLang = lang();
+    if (lang() !== '__setup') rememberLang();
     if (!myLangs.length) { showLanguageSetup(false); return d; }
     syncLevel(); buildSkillUI(); matchSessionSkill(); renderPhases(); render();
     if (!plan[lang()]) loadPlan();
@@ -1681,6 +1695,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
+  const APP_VERSION = '2026-10-27-langfix2';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
@@ -1691,6 +1706,15 @@
     render();
     call('whoAmI').then(w => {
       me = w;
+      if (w && w.version && w.version !== APP_VERSION) {
+        const b = document.createElement('div');
+        b.className = 'resume';
+        b.style.cssText = 'background:#fef7e0;border:1px solid #f9d77e';
+        b.textContent = (w.version > APP_VERSION
+          ? '⚠ This page is older than the server (' + APP_VERSION + ' vs ' + w.version + '). Update index.html on GitHub, wait 1–2 minutes, then hard-refresh (Ctrl+Shift+R).'
+          : '⚠ The server is older than this page (' + w.version + ' vs ' + APP_VERSION + '). In Apps Script: paste the new Code.gs, then Deploy → Manage deployments → Edit → New version.');
+        document.getElementById('log').before(b);
+      }
       const chip = document.getElementById('who');
       if (!IN_GOOGLE && w && !w.isOwner) {
         chip.textContent = '👤 ' + w.name + ' · ' + w.usedToday + '/' + w.limit + ' today';
@@ -1716,6 +1740,7 @@
     }).catch(showApiError);
   }
 
+  document.getElementById('ver').textContent = 'v' + APP_VERSION;
   buildSkillUI();
   if (!IN_GOOGLE) document.getElementById('cfgBtn').style.display = '';
   document.getElementById('pause').value = pauseSetting();
@@ -1762,6 +1787,8 @@
     skill = next;
     call('saveSkill', skill).catch(showApiError);
     buildSkillUI();
+    renderPhases();
+    render(); // show the new skill's screen even when a chat is in progress
   }
 
   // ---------- Chat ----------
@@ -1867,8 +1894,32 @@
     render();
   }
 
+  // "pinyin", "tones", "pronunciation" in Chinese → the pinyin trainer, not a chat lesson
+  // Make sure the language on screen is the one the card was built for (guards against late page updates).
+  function keepLang(l) {
+    if (l && lang() !== l && myLangs.indexOf(l) >= 0) { document.getElementById('lang').value = l; onLangChange(); }
+  }
+
+  function wantsPinyin(topic) { return /pinyin|拼音|声调|\btones?\b|pronunciation|发音/i.test(topic); }
+
+  function openPinyin() {
+    if (myLangs.indexOf('zh') < 0) {
+      alert('The 🎯 Pinyin & tones trainer is part of Mandarin. Add Mandarin under 🌐 Languages… first.');
+      return false;
+    }
+    if (lang() !== 'zh') { document.getElementById('lang').value = 'zh'; onLangChange(); }
+    document.getElementById('skill').value = 'pinyin';
+    onSkillChange();
+    return true;
+  }
+
   function startCustom(topic) {
     const l = lang();
+    if (/pinyin|拼音/i.test(topic) && l !== 'zh') {
+      if (confirm('Pinyin is the spelling system for Mandarin Chinese. Open the 🎯 Pinyin & tones trainer for Mandarin instead?')) { if (openPinyin()) return; }
+      else return;
+    }
+    if (l === 'zh' && wantsPinyin(topic)) { openPinyin(); return; }
     resetSession();
     const s = state[l];
     s.custom = topic;
@@ -2011,7 +2062,7 @@
     return out;
   }
 
-  function runTurn(l, useMode) {
+  function runTurn(l, useMode, retried) {
     const s = state[l];
     s.view.push({ who: 'tutor', text: '…' });
     render();
@@ -2022,9 +2073,15 @@
     call('chat', l, levels[l], useMode, skill, sent, s.custom || '')
       .then(res => {
         // Server returns the history it was sent plus the new turns; append only the new part.
+        let shown = takePhase(res.text || '', l);
+        if (!shown.trim() && !retried) { // empty reply: ask again once (Sonnet if allowed)
+          s.view.pop(); setBusy(false);
+          runTurn(l, (!me || me.allowSonnet !== false) ? 'sonnet' : 'haiku', true);
+          return;
+        }
+        if (!shown.trim()) shown = '(The tutor sent an empty reply. Tap ↻ or type "Say it again".)';
         const added = res.messages.slice(sent.length);
         s.messages = s.messages.concat(added);
-        let shown = takePhase(res.text, l);
         let testDone = false;
         if (s.skill === 'test' || skill === 'test') { const t = takeTask(shown, l); shown = t.text; testDone = t.done; }
         const justCompleted = !!(res.log && res.log.complete) && !completed[l];
