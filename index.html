@@ -85,6 +85,7 @@
     #wtip .tw { font-weight: 700; font-size: 15px; }
     #wtip .tr { font-weight: 400; color: #fbbc04; }
     #wtip .tn { color: #cfd8dc; font-size: 12px; margin-top: 3px; }
+    #wtip .more { color: #8ab4f8; }
     .langgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 10px 0 6px; }
     .langbtn { background: #f1f3f4; color: #222; border: 2px solid transparent; border-radius: 10px; padding: 8px; text-align: left;
       display: flex; flex-direction: column; gap: 2px; }
@@ -92,6 +93,43 @@
     .langbtn .fl { font-size: 20px; }
     .langbtn .nm { font-weight: 600; font-size: 13px; }
     .langbtn .nt { font-size: 12px; color: #555; }
+    .pstrip { background: #f1f8f3; border: 1px solid #cfe8d6; border-radius: 10px; padding: 8px 10px; margin: 8px 0; font-size: 13px; color: #1e4620; cursor: pointer; line-height: 1.5; }
+    .pstrip .plink { color: #1a73e8; font-weight: 600; white-space: nowrap; }
+    #progress { display: none; position: fixed; inset: 0; z-index: 40; background: rgba(32,33,36,.35); overflow-y: auto; padding: 10px; }
+    .pcard { background: #fff; border-radius: 14px; padding: 14px; max-width: 560px; margin: 0 auto 20px; box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+    .phead { display: flex; justify-content: space-between; align-items: center; }
+    .phead h3 { margin: 0; font-size: 17px; }
+    .pcard h4 { margin: 14px 0 6px; font-size: 14px; }
+    .cheer { background: #fff8e1; border-radius: 10px; padding: 8px 10px; margin: 10px 0; font-size: 14px; }
+    .goalbox { display: flex; gap: 12px; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 10px; }
+    .goalbox.empty { background: #e8f0fe; border-color: #c6dafc; }
+    .ring { width: 84px; height: 84px; flex: 0 0 84px; }
+    .gtext { flex: 1; min-width: 0; }
+    .gname { font-weight: 700; font-size: 15px; }
+    .gmsg { font-size: 14px; margin: 6px 0 4px; }
+    .pill { display: inline-block; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600; margin-top: 6px; }
+    .dots { display: flex; gap: 6px; justify-content: space-between; }
+    .dot { flex: 1; text-align: center; }
+    .dot span { display: flex; align-items: center; justify-content: center; height: 32px; border-radius: 50%; background: #f1f3f4; color: #fff; font-weight: 700; max-width: 36px; margin: 0 auto; }
+    .dot.some span { background: #c8e6c9; }
+    .dot.on span { background: #34a853; }
+    .dot small { font-size: 11px; color: #777; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 6px; text-align: center; }
+    .stats b { display: block; font-size: 17px; }
+    .stats .of { font-size: 12px; color: #777; font-weight: 400; }
+    .stats small { font-size: 11px; color: #666; }
+    @media (max-width: 420px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+    .trow { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; border-top: 1px solid #f1f3f4; }
+    .pbtns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .pbtns .go { flex: 2; padding: 12px; border-radius: 10px; font-size: 15px; }
+    .pbtns .secondary { flex: 1; }
+    .gtypes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .msg.cele { background: linear-gradient(135deg, #fff8e1, #e6f4ea); border: 1px solid #f9d77e; font-weight: 600; max-width: 100%; }
+    #toast { position: fixed; left: 50%; bottom: 90px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; z-index: 60;
+      background: #202124; color: #fff; border-radius: 12px; padding: 10px 16px; font-size: 14px; max-width: 92vw; text-align: center;
+      transition: opacity .3s, transform .3s; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+    #toast.big { font-size: 16px; padding: 14px 20px; background: #137333; }
   </style>
 </head>
 <body>
@@ -112,6 +150,7 @@
       <option value="speaking">🗣 Speaking</option>
       <option value="reading">📖 Reading</option>
       <option value="writing">✏️ Writing</option>
+      <option value="test">🧪 Level test</option>
     </select>
     <select id="audience" onchange="onAudienceChange()" title="Who is learning: sets age-appropriate themes">
       <option value="adults">🧑 Adults</option>
@@ -127,6 +166,7 @@
     <button onclick="startSession()">Start</button>
     <button class="secondary" onclick="resetSession()">New</button>
     <button class="secondary" id="spk" onclick="toggleSpeak()">🔊 On</button>
+    <button class="secondary" id="progBtn" onclick="showProgress()" title="Goals, streak and tests">📈</button>
     <button class="secondary" id="wordBtn" onclick="toggleWords()" title="Tap or hover a word to see its meaning">🔍 Words</button>
     <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Switch learner / settings" style="display:none">⚙</button>
   </div>
@@ -383,7 +423,7 @@
         savedAt: Date.now(), skill: s.skill || skill, custom: s.custom || '',
         messages: noImages(s.messages),
         view: s.view.filter(v => v.text !== '…').map(v => v.img ? Object.assign({}, v, { img: null, text: v.text || '✏️ Handwriting' }) : v),
-        phase: phase[l] || 0, completed: !!completed[l]
+        phase: phase[l] || 0, task: testTask[l] || 0, completed: !!completed[l]
       }));
     } catch (e) { /* storage full or blocked: resume just won't be available */ }
   }
@@ -399,6 +439,7 @@
         if (Date.now() - d.savedAt > KEEP_DAYS * 86400000) { localStorage.removeItem(storeKey(l)); return; }
         state[l] = { messages: d.messages, view: d.view || [], skill: d.skill, custom: d.custom || '', resumedAt: d.savedAt };
         phase[l] = d.phase || 0;
+        testTask[l] = d.task || 0;
         completed[l] = !!d.completed;
       } catch (e) {}
     });
@@ -426,7 +467,8 @@
                ['Real-world text', '🧾 Menu / sign / message'], ['News-lite', '📰 News-lite']],
     writing:  [['', 'Any activity'], ['Dictation', '🎧 Dictation'], ['Sentence building', '🧱 Sentence building'],
                ['Reply to a message', '📱 Reply to a message'], ['Mini diary', '📓 Mini diary'],
-               ['Character practice', '字 Character practice', 'script']]
+               ['Character practice', '字 Character practice', 'script']],
+    test:     [['', 'Level test']]
   };
 
   const CHIPS = {
@@ -437,14 +479,16 @@
     reading:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📄 New passage', 'New passage'], ['❓ Meaning', 'What does that mean?'], ['🔤 Pinyin', 'Pinyin', 'script'],
                ['🔊 Read it to me', 'Read it to me'], ['➡ Next', 'Next']],
     writing:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📝 New task', 'New task'], ['💡 Hint', 'Hint'], ['✅ Check', 'Check'],
-               ['👀 Show me', 'Show me'], ['➡ Next', 'Next']]
+               ['👀 Show me', 'Show me'], ['➡ Next', 'Next']],
+    test:     [['🔁 Again', 'Say it again'], ['🐢 Slower', 'Slower please'], ['⏭ Skip task', "I don't know — next task please"], ['🏁 Finish & score', '__finishtest']]
   };
 
   const HINTS = {
     guided: 'One topic, 7 short steps. Tap 🎤 and speak; take your time — it sends after the pause set in ⏱, or tap ⏹.',
     speaking: 'Tap 🎤 and speak; it sends after the ⏱ pause, or tap ⏹. Tap a message to hear it again.',
     reading: 'Read the passage, then answer the questions. Bold = new words.',
-    writing: 'Type your answer, or tap ✏️ to handwrite (great for Chinese characters).'
+    writing: 'Type your answer, or tap ✏️ to handwrite (great for Chinese characters).',
+    test: '8 short speaking tasks, no help during the test. Answer with 🎤 if you can — it is scored out of 100 at the end.'
   };
 
   function buildSkillUI() {
@@ -473,7 +517,7 @@
 
     document.getElementById('padBtn').style.display = (skill === 'writing' || skill === 'guided') ? '' : 'none';
     if (skill !== 'writing' && skill !== 'guided') document.getElementById('pad').classList.remove('open');
-    act.style.display = skill === 'guided' ? 'none' : '';
+    act.style.display = (skill === 'guided' || skill === 'test') ? 'none' : '';
     renderPhases();
     if (!state[l].view.length) render(); // refresh the welcome card
   }
@@ -486,10 +530,18 @@
   function loadPlan() {
     const l = lang();
     call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; if (!state[l].view.length) render(); }).catch(showApiError);
+    loadSummary(l);
   }
 
   function renderPhases() {
     const bar = document.getElementById('phases');
+    if (skill === 'test') {
+      const t = testTask[lang()] || 0;
+      bar.classList.toggle('show', t > 0);
+      bar.innerHTML = [1, 2, 3, 4, 5, 6, 7, 8].map(i =>
+        '<div class="ph ' + (i < t ? 'done' : i === t ? 'now' : '') + '">Task ' + i + '</div>').join('');
+      return;
+    }
     const n = phase[lang()] || 0;
     bar.classList.toggle('show', skill === 'guided' && n > 0);
     bar.innerHTML = PHASES.map((p, i) =>
@@ -535,6 +587,7 @@
         '<li>Shadow — repeat key sentences aloud</li><li>Speak — retell it and talk about you</li>' +
         '<li>Read — the same story as text</li><li>Write — dictation + your own sentences</li>' +
         '<li>Wrap-up — 30-second speaking challenge</li></ol>';
+      div.insertBefore(progressStrip(), div.querySelector('.stage') || div.querySelector('.topicnav'));
       const b = document.createElement('button');
       b.className = 'go';
       b.textContent = '▶ Start guided practice';
@@ -574,13 +627,277 @@
       } else {
         div.querySelectorAll('.nav, .pick').forEach(x => x.disabled = true);
       }
+    } else if (skill === 'test') {
+      const s = summary[l];
+      const last = s && s.tests && s.tests[0];
+      div.innerHTML = '<h3>🧪 Level test · ' + escapeHtml(name) + '</h3>' +
+        '<div class="sub">About 10 minutes · 8 speaking tasks · scored by Sonnet out of 100 (70 = pass)</div>' +
+        '<ol><li>Listening — understand short natural lines</li><li>About you — personal questions</li>' +
+        '<li>Role-plays from the topics you studied</li><li>Describe, retell, and fix a problem</li></ol>' +
+        '<div class="sub">No hints during the test — just do your best. ' +
+        (s && s.goal ? 'It checks stage ' + s.goal.stage + ' of your goal (' + escapeHtml(s.goal.name) + '), or the stage you are in now.' : 'It checks the stage you are in now.') + '</div>' +
+        (last ? '<div class="stage">Last test: ' + last.score + '/100 on ' + last.date + (last.passed ? ' 🏆' : '') + '</div>' : '');
+      div.appendChild(progressStrip());
+      const b = document.createElement('button');
+      b.className = 'go';
+      b.style.marginTop = '10px';
+      b.textContent = '▶ Start the test';
+      b.onclick = startTest;
+      div.appendChild(b);
     } else {
-      div.innerHTML = '<h3>' + name + ' · ' + skill + '</h3><div class="sub">Pick an activity above (or leave "Any") and tap Start — or choose a topic below.</div>';
+      div.appendChild(progressStrip());
+      div.insertAdjacentHTML('afterbegin', '<h3>' + name + ' · ' + skill + '</h3><div class="sub">Pick an activity above (or leave "Any") and tap Start — or choose a topic below.</div>');
       div.appendChild(topicChooser(t => startSession(t), {
         note: 'The ' + skill + ' session will use this topic, with the activity chosen above.'
       }));
     }
     return div;
+  }
+
+
+  // ---------- Goals, progress tracker, celebrations ----------
+
+  var summary = {};       // per language: getProgressSummary result
+  var progressOpen = false;
+  const GOAL_TYPES = [
+    ['travel', '✈️ Travel-ready', 'Order, shop, get around — topics 1–25'],
+    ['everyday', '🏠 Everyday life', 'Handle daily life and small problems — topics 1–50'],
+    ['social', '💬 Social', 'Chat about your life, plans, opinions — topics 1–75'],
+    ['fluency', '🌟 Basic fluency', 'A 10-minute natural conversation — all 100 topics']
+  ];
+  const STATUS_LOOK = {
+    reached: ['🏆 Goal reached', '#137333', '#e6f4ea'], ready: ['🧪 Ready for the test', '#137333', '#e6f4ea'],
+    ahead: ['🚀 Ahead of plan', '#137333', '#e6f4ea'], 'on-track': ['✅ On track', '#137333', '#e6f4ea'],
+    starting: ['🌱 Just started', '#1a4fb0', '#e8f0fe'], behind: ['💪 Catch up', '#b06000', '#fef7e0'],
+    tight: ['⚠ Ambitious date', '#b06000', '#fef7e0']
+  };
+
+  function loadSummary(l, then) {
+    l = l || lang();
+    return call('getProgressSummary', l, levels[l]).then(s => {
+      const before = summary[l];
+      summary[l] = s;
+      if (then) then(s, before);
+      if (progressOpen && l === lang()) showProgress();
+      else if (!state[l].view.length && l === lang()) render();
+      return s;
+    }).catch(() => {});
+  }
+
+  // One-line strip on the welcome card
+  function progressStrip() {
+    const s = summary[lang()];
+    const d = document.createElement('div');
+    d.className = 'pstrip';
+    if (!s) { d.textContent = '📈 Loading your progress…'; return d; }
+    const bits = [];
+    bits.push(s.streak ? '🔥 ' + s.streak + '-day streak' : (s.practisedToday ? '🔥 Day 1!' : '🔥 Start a streak today'));
+    if (s.goal) {
+      const look = STATUS_LOOK[s.goal.status] || STATUS_LOOK['on-track'];
+      bits.push('🎯 ' + s.goal.name + ' ' + s.goal.percent + '%');
+      bits.push(look[0]);
+      bits.push('⏱ ' + s.minutesWeek + '/' + s.goal.minutesTargetWeek + ' min this week');
+    } else bits.push('🎯 Set a goal');
+    d.textContent = bits.join(' · ');
+    const b = document.createElement('span');
+    b.className = 'plink';
+    b.textContent = ' 📈 See progress';
+    d.appendChild(b);
+    d.onclick = showProgress;
+    return d;
+  }
+
+  function weekDots(s) {
+    const L = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    return '<div class="dots">' + s.week.map(w => {
+      const day = L[new Date(w.date + 'T12:00:00').getDay()];
+      return '<div class="dot' + (w.practised ? ' on' : w.minutes ? ' some' : '') + '" title="' + w.date + ': ' + w.minutes + ' min, ' + w.sessions + ' sessions">' +
+        '<span>' + (w.practised ? '✓' : '') + '</span><small>' + day + '</small></div>';
+    }).join('') + '</div>';
+  }
+
+  function ring(pct) {
+    const r = 34, c = 2 * Math.PI * r, off = c * (1 - Math.min(100, pct) / 100);
+    return '<svg class="ring" viewBox="0 0 84 84"><circle cx="42" cy="42" r="' + r + '" stroke="#eee" stroke-width="9" fill="none"/>' +
+      '<circle cx="42" cy="42" r="' + r + '" stroke="#34a853" stroke-width="9" fill="none" stroke-linecap="round" ' +
+      'stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 42 42)"/>' +
+      '<text x="42" y="47" text-anchor="middle" font-size="17" font-weight="700" fill="#202124">' + pct + '%</text></svg>';
+  }
+
+  function cheer(s) {
+    if (!s.totalSessions && !s.words) return 'Every expert started with one session. Today is a great day for yours. 🌱';
+    if (s.practisedToday && s.streak >= 7) return 'A ' + s.streak + '-day streak — this is how people really learn a language. 🔥';
+    if (s.practisedToday) return 'You practised today. Your brain is wiring in new words while you sleep. 😴🧠';
+    if (s.streak) return 'Keep your ' + s.streak + '-day streak alive — even 10 minutes counts today.';
+    return 'Welcome back! One short session gets you moving again.';
+  }
+
+  function showProgress() {
+    const l = lang();
+    progressOpen = true;
+    let box = document.getElementById('progress');
+    if (!box) { box = document.createElement('div'); box.id = 'progress'; document.body.appendChild(box); }
+    box.style.display = 'block';
+    const s = summary[l];
+    if (!s) { box.innerHTML = '<div class="pcard"><h3>📈 Your progress</h3><div class="sub">Loading…</div></div>'; loadSummary(l); return; }
+    const g = s.goal;
+    let html = '<div class="pcard"><div class="phead"><h3>📈 ' + escapeHtml(langInfo(l).flag + ' ' + langInfo(l).name) + ' progress</h3>' +
+      '<button class="secondary" id="pClose">✕</button></div>' +
+      '<div class="cheer">' + escapeHtml(cheer(s)) + '</div>';
+    if (g) {
+      const look = STATUS_LOOK[g.status] || STATUS_LOOK['on-track'];
+      html += '<div class="goalbox">' + ring(g.percent) + '<div class="gtext">' +
+        '<div class="gname">🎯 ' + escapeHtml(g.name) + '</div>' +
+        '<div class="sub">' + escapeHtml(g.line) + ' · by ' + new Date(g.targetDate + 'T12:00:00').toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) +
+        ' (' + g.daysLeft + ' days)</div>' +
+        '<span class="pill" style="color:' + look[1] + ';background:' + look[2] + '">' + look[0] + '</span>' +
+        '<div class="gmsg">' + escapeHtml(g.message) + '</div>' +
+        '<div class="sub">' + g.remaining + ' sessions to go · you need ~' + g.perWeekNeeded + '/week · lately ' + g.perWeekNow + '/week</div>' +
+        '</div></div>';
+    } else {
+      html += '<div class="goalbox empty"><div><b>🎯 Set a goal</b><div class="sub">Pick what you want to be able to do and by when. ' +
+        'You will see whether you are on track, and a level test confirms when you get there.</div></div></div>';
+    }
+    html += '<h4>This week</h4>' + weekDots(s);
+    const target = g ? g.minutesTargetWeek : 0;
+    html += '<div class="stats">' +
+      '<div><b>🔥 ' + s.streak + '</b><small>day streak</small></div>' +
+      '<div><b>⏱ ' + s.minutesWeek + (target ? '<span class="of">/' + target + '</span>' : '') + '</b><small>minutes this week</small></div>' +
+      '<div><b>📚 ' + s.words + '</b><small>words learned' + (s.wordsDue ? ' · ' + s.wordsDue + ' due' : '') + '</small></div>' +
+      '<div><b>🗺 ' + s.doneCount + '</b><small>of 100 topics</small></div></div>';
+    if (target) html += '<div class="bar100"><div style="width:' + Math.min(100, Math.round(100 * s.minutesWeek / target)) + '%"></div></div>';
+    html += '<h4>Level tests</h4>';
+    html += s.tests.length
+      ? '<div class="tests">' + s.tests.map(t => '<div class="trow"><span>' + (t.passed ? '🏆' : '📝') + ' Stage ' + t.stage + ' · ' + t.date + '</span><b>' + t.score + '/100' + (t.level ? ' · ' + escapeHtml(t.level) : '') + '</b></div>' +
+          (t.workOn ? '<div class="sub">Work on: ' + escapeHtml(t.workOn) + '</div>' : '')).join('') + '</div>'
+      : '<div class="sub">No tests yet. Take one any time — it is a 10-minute speaking check, scored out of 100 (70 = pass).</div>';
+    html += '<div class="pbtns"><button class="go" id="pTest">🧪 Take a level test</button>' +
+      '<button class="secondary" id="pGoal">' + (g ? '✏️ Change goal' : '🎯 Set a goal') + '</button></div>' +
+      '<div class="sub" style="margin-top:8px">Minutes are estimated from your replies. A day counts for your streak after 1 finished session or 5 replies.</div>' +
+      '<div id="goalForm"></div></div>';
+    box.innerHTML = html;
+    box.querySelector('#pClose').onclick = closeProgress;
+    box.querySelector('#pTest').onclick = startTest;
+    box.querySelector('#pGoal').onclick = () => goalForm(box.querySelector('#goalForm'), g);
+    if (!g) goalForm(box.querySelector('#goalForm'), null);
+  }
+
+  function closeProgress() {
+    progressOpen = false;
+    const box = document.getElementById('progress');
+    if (box) box.style.display = 'none';
+  }
+
+  function goalForm(el, g) {
+    const l = lang();
+    const cur = { type: g ? g.type : 'travel', dailyMin: g ? g.dailyMin : 30, daysPerWeek: g ? g.daysPerWeek : 6, targetDate: g ? g.targetDate : '' };
+    el.innerHTML = '<h4>🎯 Your goal</h4><div class="gtypes">' + GOAL_TYPES.map(t =>
+      '<button class="langbtn' + (t[0] === cur.type ? ' on' : '') + '" data-t="' + t[0] + '"><span class="nm">' + t[1] + '</span><span class="nt">' + t[2] + '</span></button>').join('') + '</div>' +
+      '<label class="lbl">Minutes a day</label><select id="gMin" class="txt">' + [15, 20, 30, 45, 60, 90, 120].map(m => '<option' + (m === cur.dailyMin ? ' selected' : '') + '>' + m + '</option>').join('') + '</select>' +
+      '<label class="lbl">Days a week</label><select id="gDays" class="txt">' + [3, 4, 5, 6, 7].map(m => '<option' + (m === cur.daysPerWeek ? ' selected' : '') + '>' + m + '</option>').join('') + '</select>' +
+      '<label class="lbl">Target date <span class="sub" id="gHint"></span></label><input type="date" id="gDate" class="txt">' +
+      '<button class="go" id="gSave">Save goal</button><div id="gErr"></div>';
+    const date = el.querySelector('#gDate');
+    date.value = cur.targetDate;
+    let touched = !!g;
+    date.oninput = () => { touched = true; };
+    const suggest = force => call('suggestGoal', l, cur.type, cur.dailyMin).then(r => {
+      el.querySelector('#gHint').textContent = '(suggested: about ' + r.weeks + ' weeks — ' + r.date + ')';
+      if (force || !touched) date.value = r.date;
+    }).catch(() => {});
+    el.querySelectorAll('.gtypes .langbtn').forEach(b => b.onclick = () => {
+      cur.type = b.dataset.t;
+      el.querySelectorAll('.gtypes .langbtn').forEach(x => x.classList.toggle('on', x === b));
+      suggest(true);
+    });
+    el.querySelector('#gMin').onchange = e => { cur.dailyMin = Number(e.target.value); suggest(true); };
+    el.querySelector('#gDays').onchange = e => { cur.daysPerWeek = Number(e.target.value); };
+    el.querySelector('#gSave').onclick = () => {
+      cur.targetDate = date.value;
+      el.querySelector('#gSave').disabled = true;
+      call('saveGoal', l, levels[l], cur).then(s => {
+        summary[l] = s;
+        showProgress();
+        toast('🎯 Goal set: ' + s.goal.name + '. You\'ve got this!');
+        if (!state[l].view.length) render();
+      }).catch(err => {
+        el.querySelector('#gSave').disabled = false;
+        el.querySelector('#gErr').innerHTML = '<div class="loginerr">' + escapeHtml(err.message) + '</div>';
+      });
+    };
+    suggest(false);
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function toast(text, big) {
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+    t.textContent = text;
+    t.className = 'show' + (big ? ' big' : '');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => { t.className = ''; }, big ? 6000 : 4000);
+  }
+
+  // After a session is saved: celebrate what changed.
+  function celebrateSession(l) {
+    loadSummary(l, (s, before) => {
+      const msgs = [];
+      if (s.streak > (before ? before.streak : 0) && s.streak > 1) msgs.push('🔥 ' + s.streak + '-day streak!');
+      else if (s.streak === 1 && !(before && before.practisedToday)) msgs.push('🔥 Day 1 of your streak!');
+      if (before && s.doneCount > before.doneCount) {
+        const n = s.doneCount;
+        if (n % 25 === 0) msgs.push('🏁 Stage ' + (n / 25) + ' complete — huge milestone!');
+        else if (n % 5 === 0) msgs.push('⭐ ' + n + ' topics done!');
+        else msgs.push('✅ Topic done — ' + n + ' of 100.');
+      }
+      if (s.goal && before && before.goal && s.goal.percent > before.goal.percent) msgs.push('🎯 ' + s.goal.percent + '% of your goal');
+      if (s.goal && s.goal.status === 'ready' && !(before && before.goal && before.goal.status === 'ready')) msgs.push('🧪 You covered every topic for your goal — take the level test!');
+      toast('🎉 Session saved! ' + (msgs.join(' · ') || 'Nice work — every session counts.'), msgs.length > 1);
+    });
+  }
+
+  function celebrateTest(l, t) {
+    const goal = summary[l] && summary[l].goal;
+    const s = state[l];
+    s.view.push({ who: 'cele', text: t.passed
+      ? '🏆 Passed! ' + t.score + '/100 — stage ' + t.stage + (t.level ? ' (about ' + t.level + ')' : '') + '. ' +
+        (goal && t.stage >= goal.stage ? 'You reached your goal: ' + goal.name + '! Time to set the next one.' : 'Brilliant progress — keep going.')
+      : '📝 ' + t.score + '/100 — not a pass yet (70 needed), and that\'s fine: now you know exactly what to practise. ' +
+        (t.workOn ? 'Focus on: ' + t.workOn + '. ' : '') + 'Try again in a week or two.' });
+    render();
+    saveLocal(l);
+    toast(t.passed ? '🏆 Test passed — ' + t.score + '/100!' : '📝 Test saved — ' + t.score + '/100', true);
+    loadSummary(l);
+  }
+
+  // ---------- Level test ----------
+  var testTask = {}; // per language: current task number
+
+  function startTest() {
+    closeProgress();
+    const l = lang();
+    if (state[l].messages.length && !confirm('Start a level test? This ends the session in progress.')) return;
+    skill = 'test';
+    document.getElementById('skill').value = 'test';
+    try { call('saveSkill', 'test').catch(() => {}); } catch (e) {}
+    buildSkillUI();
+    resetSession();
+    sendText("Let's start the level test.");
+  }
+
+  function finishTest() {
+    const l = lang();
+    if (!state[l].messages.length) return;
+    sendText('[finish test] Please score my test now.');
+  }
+
+  function takeTask(text, l) {
+    const m = text.match(/^\s*\[Task (\d)\/8\]\s*/);
+    if (m) { testTask[l] = Number(m[1]); text = text.slice(m[0].length); }
+    let done = false;
+    if (/\[Test complete\]/i.test(text)) { done = true; text = text.replace(/\[Test complete\]/ig, '').trim() || '✅ That was the last task!'; }
+    renderPhases();
+    return { text: text, done: done };
   }
 
   // ---------- Topic navigation ----------
@@ -784,7 +1101,7 @@
     if (t) t.style.display = 'none';
   }
 
-  function showTip(span) {
+  function showTip(span, userGesture) {
     const l = lang();
     const word = span.textContent.trim();
     if (!word) return;
@@ -806,17 +1123,63 @@
       m.textContent = !d ? '…' : d.error ? d.error : (d.meaning || 'Already in your language') + (d.type ? ' (' + d.type + ')' : '');
       t.appendChild(m);
       if (d && d.note) { const nt = document.createElement('div'); nt.className = 'tn'; nt.textContent = d.note; t.appendChild(nt); }
+      if (d && d.source) {
+        const src = document.createElement('div');
+        src.className = 'tn';
+        src.textContent = { device: '💻 free on-device translation', dictionary: '📖 from the shared dictionary', ai: '✨ AI lookup — saved for next time', none: '' }[d.source] || '';
+        if (d.source === 'device') {
+          const more = document.createElement('a');
+          more.className = 'more';
+          more.textContent = ' · more detail';
+          more.href = 'javascript:void 0';
+          src.appendChild(more);
+        }
+        t.appendChild(src);
+      }
     };
     const key = l + '|' + helpLang + '|' + word.toLowerCase();
-    if (wordCache.has(key)) { fill(wordCache.get(key)); return; }
-    fill(null);
     const msg = span.closest('.msg');
     const full = msg ? msg.textContent : word;
     const at = Math.max(0, full.indexOf(word));
     const sentence = full.slice(Math.max(0, at - 120), at + word.length + 120);
-    call('lookupWord', l, word, sentence)
-      .then(d => { wordCache.set(key, d || { meaning: '' }); fill(d || { meaning: '' }); })
-      .catch(err => fill({ error: err.message }));
+    const fromServer = () => {
+      fill(null);
+      call('lookupWord', l, word, sentence)
+        .then(d => { wordCache.set(key, d || { meaning: '' }); fill(d || { meaning: '' }); })
+        .catch(err => fill({ error: err.message }));
+    };
+    t.onclick = e => { if (e.target.classList.contains('more')) { e.stopPropagation(); fromServer(); } };
+    if (wordCache.has(key)) { fill(wordCache.get(key)); return; }
+    fill(null);
+    // Free first: the browser's own on-device translator (recent desktop Chrome). Otherwise the server,
+    // which checks the shared dictionary before it ever pays for an AI lookup.
+    deviceTranslate(word, l, userGesture).then(tr => {
+      if (tipFor !== span) return;
+      if (tr && tr.toLowerCase() !== word.toLowerCase()) {
+        const d = { word: word, meaning: tr, source: 'device' };
+        wordCache.set(key, d);
+        fill(d);
+      } else fromServer();
+    });
+  }
+
+  // Chrome's built-in Translator API runs on the device: free and private. Not on most phones yet.
+  const translators = {};
+  function deviceTranslate(word, l, gesture) {
+    try {
+      if (!('Translator' in self)) return Promise.resolve(null);
+      const src = speechOf(l).split('-')[0];
+      const dst = helpLang === 'en' ? 'en' : ((HELP_LANGS[helpLang] || {}).speech || helpLang).split('-')[0];
+      if (src === dst) return Promise.resolve(null);
+      const pair = src + '>' + dst;
+      if (!translators[pair]) {
+        translators[pair] = Translator.availability({ sourceLanguage: src, targetLanguage: dst }).then(a => {
+          if (a === 'unavailable' || (a !== 'available' && !gesture)) { delete translators[pair]; return null; }
+          return Translator.create({ sourceLanguage: src, targetLanguage: dst }); // a tap may download the language pack once
+        }).catch(() => { delete translators[pair]; return null; });
+      }
+      return translators[pair].then(tr => tr ? tr.translate(word) : null).catch(() => null);
+    } catch (e) { return Promise.resolve(null); }
   }
 
   (function wireWords() {
@@ -825,7 +1188,7 @@
       const w = e.target.closest && e.target.closest('.msg.tutor .w');
       if (!w || !wordsOn) { hideTip(); return; }
       e.stopPropagation(); // don't replay the whole message
-      showTip(w);
+      showTip(w, true);
       if ('speechSynthesis' in window && window.SpeechSynthesisUtterance) { // say the word
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(w.textContent);
@@ -1098,6 +1461,7 @@
     view.forEach((m, i) => {
       const d = document.createElement('div');
       d.className = 'msg ' + m.who + (m.q ? ' q' : '');
+      if (m.who === 'cele') d.className = 'msg cele';
       if (m.who === 'tutor') { d.innerHTML = richText(m.text); if (wordsOn && m.text !== '…') wrapWords(d, lang()); }
       else d.textContent = m.text;
       if (m.img) {
@@ -1160,6 +1524,7 @@
     rateFactor = 1;
     state[lang()] = { messages: [], view: [], skill: skill };
     phase[lang()] = 0;
+    testTask[lang()] = 0;
     completed[lang()] = false;
     saveLocal(lang());
     renderPhases();
@@ -1189,6 +1554,7 @@
     if (typeof topic !== 'string') topic = ''; // called from a button click
     resetSession();
     const act = document.getElementById('activity').value;
+    if (skill === 'test') { startTest(); return; }
     sendText(skill === 'guided'
       ? "Let's start today's guided practice."
       : "Let's start today's " + skill + " session." + (act ? ' Activity: ' + act + '.' : '') +
@@ -1209,7 +1575,7 @@
     if (completed[l]) { Promise.resolve(pendingSave[l]).then(go, go); return; }
     setBusy(true);
     call('finishSession', l, levels[l], 'Finished from the wrap-up button.', state[l].custom || '')
-      .then(() => { setBusy(false); go(); })
+      .then(() => { setBusy(false); go(); celebrateSession(l); })
       .catch(err => { setBusy(false); showApiError(err); });
   }
 
@@ -1228,7 +1594,7 @@
 
   // How a learner message is shown in the chat
   function displayText(text) {
-    return text.replace(/^\[question\]\s*/, '🙋 ').replace(/^\[voice\]\s*/, '🎤 ');
+    return text.replace(/^\[question\]\s*/, '🙋 ').replace(/^\[voice\]\s*/, '🎤 ').replace(/^\[finish test\]\s*/, '🏁 ');
   }
 
   function quick(text) {
@@ -1243,6 +1609,12 @@
     if (text === '__ask') {
       if (!state[lang()].messages.length) { alert('Start a session first, then tap 🙋 Ask any time.'); return; }
       setAsk(!askNext);
+      return;
+    }
+    if (text === '__finishtest') {
+      if (!state[lang()].messages.length) { startTest(); return; }
+      if (document.getElementById('sendBtn').disabled) return;
+      if (confirm('Finish now and score the test? Tasks you have not answered score 0.')) finishTest();
       return;
     }
     if (text === '__faster') { // only changes the playback speed
@@ -1316,7 +1688,10 @@
         // Server returns the history it was sent plus the new turns; append only the new part.
         const added = res.messages.slice(sent.length);
         s.messages = s.messages.concat(added);
-        const shown = takePhase(res.text, l);
+        let shown = takePhase(res.text, l);
+        let testDone = false;
+        if (s.skill === 'test' || skill === 'test') { const t = takeTask(shown, l); shown = t.text; testDone = t.done; }
+        const justCompleted = !!(res.log && res.log.complete) && !completed[l];
         if (res.log && res.log.complete) completed[l] = true;
         s.view[s.view.length - 1] = { who: 'tutor', text: shown, model: res.model, escalated: res.escalated,
           secs: ((Date.now() - t0) / 1000).toFixed(1) };
@@ -1330,8 +1705,14 @@
         }
         const wrapUp = phase[l] === 7;
         const refreshPlan = () => { if (wrapUp) { plan[l] = null; topicList[l] = null; call('getTodayPlan', l, levels[l]).then(p => { plan[l] = p; }).catch(() => {}); } };
-        if (res.log) pendingSave[l] = call('saveLog', l, levels[l], res.log, s.custom || '').then(refreshPlan).catch(() => {});
+        if (res.log) pendingSave[l] = call('saveLog', l, levels[l], res.log, s.custom || '').then(r => {
+          refreshPlan();
+          if (r && r.test) celebrateTest(l, r.test);
+          else if (justCompleted) celebrateSession(l);
+          else loadSummary(l);
+        }).catch(() => {});
         else refreshPlan();
+        if (testDone) setTimeout(() => { if (lang() === l && !document.getElementById('sendBtn').disabled) sendText('[finish test] Please score my test now.'); }, 1200);
       })
       .catch(err => {
         // Drop the learner's unanswered turn so history stays valid, but keep it for ↻ Retry
