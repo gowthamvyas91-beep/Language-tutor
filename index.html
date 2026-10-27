@@ -142,6 +142,11 @@
     .syl .h { font-size: 22px; } .syl .p { font-size: 15px; font-weight: 600; } .syl .n { font-size: 11px; }
     .syl.ok { border-color: #34a853; background: #e6f4ea; } .syl.tone { border-color: #f9ab00; background: #fef7e0; } .syl.bad { border-color: #ea4335; background: #fce8e6; }
     .pitchbox { margin-top: 6px; }
+    .pronwrap { display: flex; justify-content: flex-end; margin: -2px 0 6px; }
+    .pron { max-width: 92%; background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 6px 10px; font-size: 14px; line-height: 1.9; }
+    .pw { border-radius: 6px; padding: 1px 5px; margin: 0 1px; display: inline-block; line-height: 1.3; text-align: center; }
+    .pw small { display: block; font-size: 11px; }
+    .pw.ok { background: #e6f4ea; color: #137333; } .pw.tone { background: #fef7e0; color: #b06000; } .pw.bad { background: #fce8e6; color: #c5221f; font-weight: 600; }
     #pitchStrip { width: 100%; height: 56px; display: block; background: #fcfcfc; border: 1px solid #eee; border-radius: 8px; }
     #pitchCap { min-height: 14px; margin: 2px 4px 0; }
     #pitchBtn.on { background: #e8f0fe; color: #1a4fb0; }
@@ -533,6 +538,7 @@
     if (skill === 'pinyin' && l !== 'zh') { skill = 'guided'; document.getElementById('skill').value = 'guided'; }
     document.body.classList.toggle('pinyin', skill === 'pinyin');
     showStrip();
+    if (l === 'zh') loadPinyinLib().catch(() => {});
     document.body.classList.toggle('reading', skill === 'reading');
     document.getElementById('hint').textContent = HINTS[skill];
 
@@ -2013,7 +2019,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-27-pitchall';
+  const APP_VERSION = '2026-10-27-pron';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
@@ -2161,6 +2167,12 @@
         d.appendChild(b);
       }
       log.appendChild(d);
+      if (m.who === 'me' && m.pron) {
+        const pr = document.createElement('div');
+        pr.className = 'pronwrap';
+        pr.innerHTML = pronHtml(m.pron);
+        log.appendChild(pr);
+      }
 
       if (m.who === 'tutor' && m.model) {
         const meta = document.createElement('div');
@@ -2344,6 +2356,55 @@
     sendText(text);
   }
 
+  // ---------- "Did I say it right?" — free check of a spoken repeat against the tutor's « » sentence ----------
+  const normW = w => w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}']/gu, '');
+  function pronCheck(heard, l) {
+    const v = state[l].view;
+    let tutor = null;
+    for (let i = v.length - 1; i >= 0; i--) if (v[i].who === 'tutor' && v[i].text !== '…') { tutor = v[i].text; break; }
+    if (!tutor) return null;
+    const targets = [...tutor.matchAll(/«([^»]+)»/g)].map(m => m[1].trim()).filter(Boolean);
+    if (!targets.length) return null;
+    if (l === 'zh') {
+      if (!window.pinyinPro) return null;
+      let best = null;
+      targets.forEach(t => { if (!sylls(t).length) return; const g = bestGrade(t, [heard]); if (!best || g.score > best.g.score) best = { t: t, g: g }; });
+      if (!best || best.g.score < 0.45) return null; // you answered rather than repeated
+      return { zh: true, target: best.t, sylls: best.g.sylls.map(r => ({ ch: r.ch, ok: r.okI && r.okF && r.okT, tone: r.okI && r.okF && !r.okT,
+        heard: r.heard ? pinyinPro.convert((r.heard.i + r.heard.f).replace(/^([jqxy])ü/, '$1u') + (r.heard.t || ''), { format: 'numToSymbol' }) : '' })),
+        score: Math.round(100 * best.g.score) };
+    }
+    // other languages: word-by-word (longest common subsequence)
+    const H = heard.split(/\s+/).map(normW).filter(Boolean);
+    let best = null;
+    targets.forEach(t => {
+      const words = t.split(/\s+/).filter(w => normW(w));
+      const T = words.map(normW);
+      const n = T.length, m = H.length, L = [];
+      for (let i = 0; i <= n; i++) { L[i] = []; for (let j = 0; j <= m; j++) L[i][j] = !i || !j ? 0 : T[i - 1] === H[j - 1] ? L[i - 1][j - 1] + 1 : Math.max(L[i - 1][j], L[i][j - 1]); }
+      const ok = new Array(n).fill(false);
+      for (let i = n, j = m; i > 0 && j > 0;) { if (T[i - 1] === H[j - 1]) { ok[i - 1] = true; i--; j--; } else if (L[i - 1][j] >= L[i][j - 1]) i--; else j--; }
+      const sc = n ? L[n][m] / n : 0;
+      // which matched words differ only by an accent (stress) mark?
+      const exact = w => w.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
+      const Hx = heard.split(/\s+/).map(exact).filter(Boolean);
+      const acc = words.map((w, i) => ok[i] && Hx.indexOf(exact(w)) < 0 && exact(w) !== normW(w));
+      if (!best || sc > best.score) best = { words: words, ok: ok, acc: acc, score: sc };
+    });
+    if (!best || best.score < 0.5 || best.words.length < 2) return null; // an answer in your own words, not a repeat
+    return { words: best.words.map((w, i) => ({ w: w, ok: best.ok[i] && !best.acc[i], acc: best.acc[i] })), score: Math.round(100 * best.score) };
+  }
+  function pronHtml(p) {
+    const all = p.zh ? p.sylls.every(x => x.ok) : p.words.every(x => x.ok);
+    if (!p.zh) p.score = Math.round(100 * p.words.filter(x => x.ok).length / p.words.length);
+    const body = p.zh
+      ? p.sylls.map(x => '<span class="pw ' + (x.ok ? 'ok' : x.tone ? 'tone' : 'bad') + '" title="' + (x.ok ? 'clear' : 'heard ' + escapeHtml(x.heard || '—')) + '">' +
+          escapeHtml(x.ch) + '<small>' + escapeHtml((marked(x.ch)[0] || '')) + (x.ok ? '' : ' → ' + escapeHtml(x.heard || '—')) + '</small></span>').join('')
+      : p.words.map(x => '<span class="pw ' + (x.ok ? 'ok' : x.acc ? 'tone' : 'bad') + '"' + (x.acc ? ' title="stress / accent sounded different"' : '') + '>' + escapeHtml(x.w) + '</span>').join(' ');
+    return '<div class="pron"><b>' + (all ? '🗣 Clear! ' : '🗣 ' + p.score + '% clear — ') + '</b>' +
+      (all ? '' : '<span class="sub">' + (p.zh ? 'orange = tone, red = sound' : 'red = not heard clearly, orange = stress/accent — try those again') + '</span><br>') + body + '</div>';
+  }
+
   function sendText(text) {
     const s = state[lang()];
     if (askNext) {
@@ -2351,7 +2412,9 @@
       setAsk(false);
     }
     s.messages.push({ role: 'user', content: text });
-    s.view.push({ who: 'me', text: displayText(text), q: /^\[question\]/.test(text) });
+    const item = { who: 'me', text: displayText(text), q: /^\[question\]/.test(text) };
+    if (/^\[voice\]/.test(text)) { try { item.pron = pronCheck(text.replace(/^\[voice\]\s*/, ''), lang()); } catch (e) {} }
+    s.view.push(item);
     runTurn(lang(), mode);
   }
 
