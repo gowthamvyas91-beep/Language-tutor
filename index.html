@@ -141,6 +141,10 @@
     .syl { border-radius: 10px; padding: 6px 10px; text-align: center; min-width: 58px; border: 2px solid; }
     .syl .h { font-size: 22px; } .syl .p { font-size: 15px; font-weight: 600; } .syl .n { font-size: 11px; }
     .syl.ok { border-color: #34a853; background: #e6f4ea; } .syl.tone { border-color: #f9ab00; background: #fef7e0; } .syl.bad { border-color: #ea4335; background: #fce8e6; }
+    .pitchbox { margin-top: 6px; }
+    #pitchStrip { width: 100%; height: 56px; display: block; background: #fcfcfc; border: 1px solid #eee; border-radius: 8px; }
+    #pitchCap { min-height: 14px; margin: 2px 4px 0; }
+    #pitchBtn.on { background: #e8f0fe; color: #1a4fb0; }
     .pitchcv { width: 100%; height: 150px; display: block; background: #fcfcfc; border: 1px solid #eee; border-radius: 10px; margin-top: 10px; }
     .pylive { font-size: 15px !important; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; color: #555; margin-top: 4px; min-height: 18px; }
     .pybtns .go.rec { background: #d93025; animation: pulse 1s infinite; }
@@ -192,6 +196,7 @@
     <button class="secondary" onclick="resetSession()">New</button>
     <button class="secondary" id="spk" onclick="toggleSpeak()">🔊 On</button>
     <button class="secondary" id="progBtn" onclick="showProgress()" title="Goals, streak and tests">📈</button>
+    <button class="secondary" id="pitchBtn" onclick="toggleStrip()" title="Show your voice pitch while you speak">〰</button>
     <button class="secondary" id="wordBtn" onclick="toggleWords()" title="Tap or hover a word to see its meaning">🔍 Words</button>
     <span class="sub" id="ver" style="align-self:center;font-size:11px;color:#999"></span>
     <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Switch learner / settings" style="display:none">⚙</button>
@@ -207,6 +212,7 @@
 
   <div id="log"></div>
 
+  <div id="pitchBox" class="pitchbox"><canvas id="pitchStrip"></canvas><div id="pitchCap" class="sub"></div></div>
   <div class="chips" id="chips"></div>
 
   <div id="pad">
@@ -526,6 +532,7 @@
     if (pyOpt) pyOpt.hidden = pyOpt.disabled = l !== 'zh';
     if (skill === 'pinyin' && l !== 'zh') { skill = 'guided'; document.getElementById('skill').value = 'guided'; }
     document.body.classList.toggle('pinyin', skill === 'pinyin');
+    showStrip();
     document.body.classList.toggle('reading', skill === 'reading');
     document.getElementById('hint').textContent = HINTS[skill];
 
@@ -1067,16 +1074,29 @@
     return PY_TIPS['T' + bad.t] || PY_TIPS.other;
   }
 
+  // Normal: whole word at 0.75. Slow: each syllable on its own with a pause, then the whole word slowly.
+  // (Some online voices ignore very low speech rates, so slow mode doesn't rely on the rate alone.)
   function pySay(text, slow) {
     if (!('speechSynthesis' in window)) return;
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'zh-CN';
-    const v = pickVoice('zh'); if (v) u.voice = v;
-    u.rate = slow ? 0.45 : 0.75;
-    py.ttsUntil = Date.now() + 8000; // while the model voice plays, the mic ignores what it hears
-    u.onend = u.onerror = () => { py.ttsUntil = Date.now() + 500; };
-    speechSynthesis.speak(u);
+    const voices = speechSynthesis.getVoices();
+    const zh = voices.filter(v => /^zh[-_](CN|Hans)/i.test(v.lang) || v.lang === 'zh');
+    const voice = slow ? (zh.find(v => v.localService) || zh[0] || pickVoice('zh')) : pickVoice('zh');
+    const parts = [];
+    const chars = Array.from(String(text)).filter(c => /[\u4e00-\u9fff]/.test(c));
+    if (slow && chars.length > 1) chars.forEach(c => parts.push({ t: c, rate: 0.6 }));
+    parts.push({ t: text, rate: slow ? 0.55 : 0.75 });
+    py.ttsUntil = Date.now() + 15000; // while the model voice plays, the mic ignores what it hears
+    const go = () => parts.forEach((p, i) => {
+      const u = new SpeechSynthesisUtterance(p.t);
+      u.lang = 'zh-CN';
+      if (voice) u.voice = voice;
+      u.rate = p.rate;
+      if (i === parts.length - 1) u.onend = u.onerror = () => { py.ttsUntil = Date.now() + 500; };
+      speechSynthesis.speak(u);
+    });
+    // Chrome sometimes drops an utterance queued right after cancel(); a short delay avoids that
+    setTimeout(go, 60);
   }
 
   // ---------- Live mic: press once, it keeps listening and "catches" the right sound ----------
@@ -1085,13 +1105,13 @@
     if (!SR) { alert('Pronunciation checking needs speech recognition — use Chrome (desktop or Android) or Edge.'); return; }
     py.live = true; py.micError = ''; py.hearing = '';
     pyRecStart();
-    pitchStart();
+    pitch.want = true; pitchStart();
     renderPinyin();
   }
   function pyMicOff() {
     py.live = false; py.ready = false; py.hearing = '';
     if (pyRec) { const r = pyRec; pyRec = null; try { r.abort ? r.abort() : r.stop(); } catch (e) {} }
-    pitchStop();
+    pitch.want = false; pitchStop();
   }
   function pyRecStart() {
     const r = new SR();
@@ -1133,7 +1153,7 @@
     if (pitch.on || !navigator.mediaDevices || !window.AudioContext && !window.webkitAudioContext) return;
     pitch.on = true;
     navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(stream => {
-      if (!py.live) { stream.getTracks().forEach(t => t.stop()); pitch.on = false; return; }
+      if (!pitch.want) { stream.getTracks().forEach(t => t.stop()); pitch.on = false; return; }
       const AC = window.AudioContext || window.webkitAudioContext;
       pitch.stream = stream; pitch.ctx = new AC();
       const src = pitch.ctx.createMediaStreamSource(stream);
@@ -1177,7 +1197,7 @@
     if (!pitch.an) return;
     pitch.an.getFloatTimeDomainData(pitch.buf);
     const now = performance.now();
-    if (Date.now() < (py.ttsUntil || 0)) { pitch.utt = null; drawPitch(); return; } // ignore the model voice
+    if (Date.now() < (py.ttsUntil || 0)) { pitch.utt = null; drawPitch(); drawStrip(); return; } // ignore the model voice
     const p = detectPitch(pitch.buf, pitch.ctx.sampleRate);
     py.level = Math.min(1, p.rms * 12);
     if (p.f) {
@@ -1189,12 +1209,14 @@
     } else if (pitch.utt && now - pitch.lastVoiced > 350) {
       if (pitch.utt.length >= 6) {
         pitch.last = pitch.utt; py.toneGuess = guessTone(pitch.last);
+        if (skill !== 'pinyin') stripCaption();
         const it = pyItem(); py.match = it ? toneMatch(pitch.last, it) : null;
         const tg = document.getElementById('pyTone'); if (tg) tg.textContent = [toneMatchText(), toneGuessText()].filter(Boolean).join('  ·  ');
       }
       pitch.utt = null;
     } else if (pitch.utt) pitch.utt.push({ t: now, st: null });
     drawPitch();
+    drawStrip();
   }
   // Your comfortable range → Chao tone levels 1 (low) … 5 (high)
   function pitchRange() {
@@ -1322,6 +1344,61 @@
     if (!it || !py.match) return '';
     return '🎵 Tone match ' + py.match.pct + '%' + (py.match.per.length > 1 ? ' · ' + py.match.per.map(x =>
       (marked(x.ch)[0] || x.ch) + ' ' + (x.pct >= 75 ? '✓' : x.pct >= 50 ? '~' : '✗')).join('  ') : '');
+  }
+
+  // ---------- Pitch strip under the chat (all languages, all exercises) ----------
+  var stripOn = (function () { try { return localStorage.getItem('tutorPitch') !== 'off'; } catch (e) { return true; } })();
+  function toggleStrip() {
+    stripOn = !stripOn;
+    try { localStorage.setItem('tutorPitch', stripOn ? 'on' : 'off'); } catch (e) {}
+    showStrip();
+  }
+  function showStrip() {
+    const box = document.getElementById('pitchBox');
+    if (!box) return;
+    box.style.display = stripOn && skill !== 'pinyin' ? '' : 'none';
+    const b = document.getElementById('pitchBtn'); if (b) b.classList.toggle('on', stripOn);
+    drawStrip();
+  }
+  function stripCaption() {
+    const c = document.getElementById('pitchCap');
+    if (!c) return;
+    const pts = pitch.last ? smoothLevels(pitch.last, pitchRange()) : [];
+    if (pts.length < 4) return;
+    const vals = pts.map(p => p.v), range = Math.max.apply(null, vals) - Math.min.apply(null, vals);
+    const k = Math.max(1, Math.floor(pts.length / 5));
+    const s = vals.slice(0, k).reduce((a, b) => a + b, 0) / k, e = vals.slice(-k).reduce((a, b) => a + b, 0) / k;
+    const end = e - s > 0.8 ? 'rising at the end ↗ (sounds like a question)' : s - e > 0.8 ? 'falling at the end ↘ (sounds like a statement)' : 'level at the end →';
+    const melody = range < 1.2 ? 'quite flat — try more melody' : range > 3 ? 'very lively' : 'natural range';
+    c.textContent = lang() === 'zh' ? '〰 Your last pitch line — Chinese tones should show clear rises, dips and falls (practise them in 🎯 Pinyin & tones).'
+      : '〰 Your intonation: ' + melody + ', ' + end + '.';
+  }
+  function drawStrip() {
+    const cv = document.getElementById('pitchStrip');
+    if (!cv || !cv.isConnected || cv.offsetParent === null && !cv.clientWidth) return;
+    const dpr = window.devicePixelRatio || 1, W = Math.round((cv.clientWidth || 600) * dpr), H = Math.round((cv.clientHeight || 56) * dpr);
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const g = cv.getContext('2d'); if (!g) return;
+    g.clearRect(0, 0, W, H);
+    const pad = 6 * dpr, y = v => H - pad - (Math.max(0.5, Math.min(5.5, v)) - 1) / 4 * (H - 2 * pad);
+    g.strokeStyle = '#eee'; g.lineWidth = dpr;
+    [1, 3, 5].forEach(v => { g.beginPath(); g.moveTo(0, y(v)); g.lineTo(W, y(v)); g.stroke(); });
+    const utt = pitch.utt || pitch.last;
+    if (utt && utt.length > 2) {
+      const pts = smoothLevels(utt, pitchRange());
+      if (pts.length > 1) {
+        const t1 = pts[pts.length - 1].t, t0 = pitch.utt ? Math.min(pts[0].t, t1 - 4000) : pts[0].t, span = Math.max(1000, t1 - t0);
+        const x0 = pitch.utt ? t1 - span : t0;
+        g.strokeStyle = '#1a73e8'; g.lineWidth = 3 * dpr; g.lineCap = 'round'; g.beginPath();
+        let prev = null;
+        pts.forEach(p => { if (p.t < x0) return; const x = (p.t - x0) / span * (W - 16 * dpr) + 4 * dpr; if (prev == null || p.t - prev > 120) g.moveTo(x, y(p.v)); else g.lineTo(x, y(p.v)); prev = p.t; });
+        g.stroke();
+      }
+    } else {
+      g.fillStyle = '#aaa'; g.font = (11 * dpr) + 'px system-ui';
+      g.fillText('〰 Your pitch appears here while you speak with 🎤', 8 * dpr, H / 2 + 4 * dpr);
+    }
+    if (pitch.on) { g.fillStyle = (py.level || 0) > 0.15 ? '#d93025' : '#ccc'; g.beginPath(); g.arc(W - 8 * dpr, 8 * dpr, (3 + 6 * (py.level || 0)) * dpr, 0, 7); g.fill(); }
   }
 
   function pyItem() { return py.drill && py.drill.items[py.idx]; }
@@ -1936,7 +2013,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-27-repeat';
+  const APP_VERSION = '2026-10-27-pitchall';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
@@ -2697,6 +2774,7 @@
       done = true;
       clearTimeout(timer);
       rec = null;
+      pitch.want = false; pitchStop(); stripCaption(); drawStrip();
       mic.classList.remove('listening');
       mic.textContent = '🎤';
       box.placeholder = oldPlaceholder;
@@ -2752,6 +2830,7 @@
     }
 
     rec = { stopNow: stopNow };
+    if (stripOn) { pitch.want = true; pitch.last = null; pitchStart(); }
     mic.classList.add('listening');
     mic.textContent = hold ? '🔴' : '⏹';
     box.placeholder = hold ? 'Listening… release to send' : wait > 0
