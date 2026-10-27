@@ -1326,14 +1326,15 @@
 
   function pyItem() { return py.drill && py.drill.items[py.idx]; }
 
+  // Never moves on by itself: you repeat as often as you like and tap Next when ready.
   function pyAttempt(g) {
     py.last = g;
     if (!py.first) py.first = g; // stats use the first try, so progress is honest
     py.tries++;
+    if (g.ok) { py.goodCount = (py.goodCount || 0) + 1; py.streakRow = (py.streakRow || 0) + 1; } else py.streakRow = 0;
     py.hearing = '';
+    if (py.check) py.advancing = true; // a check takes one try per item
     renderPinyin();
-    if (py.check) { py.advancing = true; setTimeout(() => pyNext(), 800); return; }
-    if (g.ok || (py.live && py.tries >= 5)) { py.advancing = true; setTimeout(() => { if (py.last === g) pyNext(); }, g.ok ? 1100 : 2500); }
   }
 
   function pyNext() {
@@ -1344,7 +1345,7 @@
         .map(r => ({ i: /^[yw]?$/.test(r.i) ? '' : r.i, f: r.f, t: r.t, okI: r.okI, okF: r.okF, okT: r.okT })) });
       py.recent.push(it.hanzi);
     }
-    py.idx++; py.tries = 0; py.first = null; py.last = null; py.micError = ''; py.advancing = false; py.hearing = ''; py.toneGuess = 0; py.match = null;
+    py.idx++; py.tries = 0; py.first = null; py.last = null; py.micError = ''; py.advancing = false; py.hearing = ''; py.toneGuess = 0; py.match = null; py.goodCount = 0; py.streakRow = 0;
     py.baseIdx = py.resLen || 0; pitch.last = null; pitch.utt = null;
     if (py.idx >= py.drill.items.length) return pyFinishRound();
     renderPinyin();
@@ -1426,12 +1427,13 @@
         '<div class="pypy">' + escapeHtml(marked(it.hanzi).join(' ')) + '</div>' +
         '<div class="sub" style="text-align:center">' + escapeHtml(it.meaning || '') + '</div>' +
         (it.tip && !py.check ? '<div class="sub pytip">💡 ' + escapeHtml(it.tip) + '</div>' : '') +
-        (g ? (py.check ? '<div class="pyverdict">Saved — next one…</div>'
+        (g ? (py.check ? '<div class="pyverdict">✓ Saved — tap Next ▶ when ready</div>'
           : sylHtml(g) + '<div class="pyverdict ' + (g.ok ? 'good' : '') + '">' +
-            (g.ok ? ['✅ Perfect!', '🌟 Excellent!', '✅ Spot on!'][py.idx % 3]
-              : (py.tries >= 3 ? 'Good effort — let\'s move on and come back to it later.' : 'Close! Try again.')) + '</div>' +
+            (g.ok ? ['✅ Perfect!', '🌟 Excellent!', '✅ Spot on!'][py.goodCount % 3] + (py.streakRow > 1 ? ' · ' + py.streakRow + ' in a row 🔥' : '')
+              : 'Close! Try again.') + '</div>' +
+            '<div class="sub" style="text-align:center">' + py.goodCount + ' of ' + py.tries + ' tries right · repeat as much as you like, then tap Next ▶</div>' +
             '<div class="sub" style="text-align:center">I heard: ' + escapeHtml(g.text || '—') + '</div>' +
-            (!g.ok && py.live && py.tries < 5 ? '<div class="sub" style="text-align:center">🎤 Still listening — just say it again.</div>' : '') +
+            (py.live ? '<div class="sub" style="text-align:center">🎤 Still listening — say it again any time.</div>' : '') +
             (!g.ok ? '<div class="pytip">💡 ' + pyTipFor(g).replace(/«([^»]+)»/g, '<b>$1</b>') + '</div>' : '')) : '') +
         '<div id="pyPitch"></div>' +
         '<div class="pylive"><span id="pyHearing">' + (py.live ? (py.ready ? escapeHtml(py.hearing || '👂 Listening… say it whenever you\'re ready') : '⏳ Starting mic…') : '') + '</span>' +
@@ -1440,7 +1442,7 @@
         '<div class="pybtns">' +
           (py.check ? '' : '<button class="secondary" id="pyHear">🔊 Listen</button><button class="secondary" id="pySlow">🐢 Slow</button>') +
           '<button class="go' + (py.live ? ' rec' : '') + '" id="pyMic">' + (py.live ? '⏹ Stop mic' : '🎤 Start mic') + '</button>' +
-          '<button class="secondary" id="pyNext">' + (g && (g.ok || py.tries >= 3) ? 'Next ▶' : '⏭ Skip') + '</button>' +
+          '<button class="' + (g && (g.ok || py.check) ? 'go' : 'secondary') + '" id="pyNext">' + (g ? 'Next ▶' : '⏭ Skip') + '</button>' +
         '</div>';
       const q = s => div.querySelector(s);
       if (q('#pyHear')) { q('#pyHear').onclick = () => pySay(it.hanzi); q('#pySlow').onclick = () => pySay(it.hanzi, true); }
@@ -1934,7 +1936,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-27-live';
+  const APP_VERSION = '2026-10-27-repeat';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
