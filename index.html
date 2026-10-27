@@ -141,6 +141,8 @@
     .syl { border-radius: 10px; padding: 6px 10px; text-align: center; min-width: 58px; border: 2px solid; }
     .syl .h { font-size: 22px; } .syl .p { font-size: 15px; font-weight: 600; } .syl .n { font-size: 11px; }
     .syl.ok { border-color: #34a853; background: #e6f4ea; } .syl.tone { border-color: #f9ab00; background: #fef7e0; } .syl.bad { border-color: #ea4335; background: #fce8e6; }
+    .pitchcv { width: 100%; height: 150px; display: block; background: #fcfcfc; border: 1px solid #eee; border-radius: 10px; margin-top: 10px; }
+    .pylive { font-size: 15px !important; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; color: #555; margin-top: 4px; min-height: 18px; }
     .pybtns .go.rec { background: #d93025; animation: pulse 1s infinite; }
     .pyverdict { text-align: center; font-size: 18px; font-weight: 700; margin: 6px 0 2px; }
     .pyverdict.good { color: #137333; }
@@ -1072,69 +1074,266 @@
     u.lang = 'zh-CN';
     const v = pickVoice('zh'); if (v) u.voice = v;
     u.rate = slow ? 0.45 : 0.75;
+    py.ttsUntil = Date.now() + 8000; // while the model voice plays, the mic ignores what it hears
+    u.onend = u.onerror = () => { py.ttsUntil = Date.now() + 500; };
     speechSynthesis.speak(u);
   }
 
-  // Listen until you pause (not just one short burst). Tap again to stop early.
+  // ---------- Live mic: press once, it keeps listening and "catches" the right sound ----------
   var pyRec = null;
-  function pyListen(onDone) {
+  function pyMicOn() {
     if (!SR) { alert('Pronunciation checking needs speech recognition — use Chrome (desktop or Android) or Edge.'); return; }
-    if (pyRec) { try { pyRec.stop(); } catch (e) {} return; } // second tap = done speaking
-    speechSynthesis.cancel();
+    py.live = true; py.micError = ''; py.hearing = '';
+    pyRecStart();
+    pitchStart();
+    renderPinyin();
+  }
+  function pyMicOff() {
+    py.live = false; py.ready = false; py.hearing = '';
+    if (pyRec) { const r = pyRec; pyRec = null; try { r.abort ? r.abort() : r.stop(); } catch (e) {} }
+    pitchStop();
+  }
+  function pyRecStart() {
     const r = new SR();
     pyRec = r;
     r.lang = 'zh-CN'; r.interimResults = true; r.maxAlternatives = 5; r.continuous = true;
-    let finals = [], interim = '', heardAny = false, silence = null;
-    const quiet = ms => { clearTimeout(silence); silence = setTimeout(() => { try { r.stop(); } catch (e) {} }, ms); };
-    const maxTimer = setTimeout(() => { try { r.stop(); } catch (e) {} }, 9000);
-    py.listening = true; py.ready = false; py.micError = ''; renderPinyin();
-    r.onaudiostart = () => { py.ready = true; renderPinyin(); quiet(6000); }; // nothing said within 6 s → stop
+    py.baseIdx = 0; py.resLen = 0;
+    r.onaudiostart = () => { py.ready = true; renderPinyin(); };
     r.onresult = e => {
-      heardAny = true;
-      interim = '';
-      for (let k = e.resultIndex; k < e.results.length; k++) {
+      py.resLen = e.results.length;
+      for (let k = Math.max(e.resultIndex, py.baseIdx); k < e.results.length; k++) {
         const res = e.results[k];
-        if (res.isFinal) { const alts = []; for (let a = 0; a < res.length; a++) alts.push(res[a].transcript); finals.push(alts); }
-        else interim += res[0].transcript;
+        if (Date.now() < (py.ttsUntil || 0)) { if (res.isFinal) py.baseIdx = k + 1; continue; } // that was the model voice
+        const it = pyItem();
+        if (!it || py.screen !== 'item' || py.advancing) { if (res.isFinal) py.baseIdx = k + 1; continue; }
+        const alts = []; for (let a = 0; a < res.length; a++) alts.push(res[a].transcript);
+        const g = bestGrade(it.hanzi, alts);
+        if (g.ok && !py.check) { py.baseIdx = k + 1; pyAttempt(g); return; }      // caught it!
+        if (res.isFinal) { py.baseIdx = k + 1; pyAttempt(g); return; }             // a finished try that was off
+        py.hearing = hearingText(alts[0]);                                        // still speaking: show it live
+        const h = document.getElementById('pyHearing'); if (h) h.textContent = py.hearing;
       }
-      quiet(1300); // stop 1.3 s after you finish speaking
     };
     r.onerror = e => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') py.micError = 'Microphone blocked — allow it for this site (🔒 in the address bar) and try again.';
-      else if (e.error === 'audio-capture') py.micError = 'No microphone found. Check it is plugged in and selected in your system settings.';
-      else if (e.error === 'network') py.micError = 'Speech recognition needs an internet connection — check it and try again.';
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { py.micError = 'Microphone blocked — allow it for this site (🔒 in the address bar).'; pyMicOff(); renderPinyin(); }
+      else if (e.error === 'audio-capture') { py.micError = 'No microphone found — check your sound input settings.'; pyMicOff(); renderPinyin(); }
+      else if (e.error === 'network') { py.micError = 'Speech recognition needs internet — check your connection.'; }
     };
-    r.onend = () => {
-      clearTimeout(silence); clearTimeout(maxTimer);
-      pyRec = null; py.listening = false; py.ready = false;
-      // combine the final pieces (first piece's alternatives × the rest's best guess), else use the partial text
-      let alts = [];
-      if (finals.length) {
-        const rest = finals.slice(1).map(f => f[0]).join('');
-        alts = finals[0].map(a => a + rest);
-        if (finals.length > 1) alts.push(finals.map(f => f[0]).join(''));
-      } else if (interim.trim()) alts = [interim];
-      if (alts.length) { py.micError = ''; onDone(alts); }
-      else {
-        if (!py.micError) py.micError = heardAny ? 'I couldn\'t make out the words — try once more, a little louder.'
-          : 'I didn\'t catch that. Wait for 🔴 Speak now, then say it clearly. For a single sound, saying it twice helps (e.g. táng táng).';
-        renderPinyin();
+    r.onend = () => { // the browser stops after a while; keep going while the mic is on
+      if (pyRec !== r) return;
+      pyRec = null;
+      if (py.live) setTimeout(() => { if (py.live && !pyRec) pyRecStart(); }, 200);
+    };
+    try { r.start(); } catch (e) { pyRec = null; }
+  }
+
+  // ---------- Pitch tracker (Web Audio): your voice's pitch against the target tone shapes ----------
+  var pitch = { on: false, frames: [], utt: null, last: null, all: [], lastVoiced: 0 };
+  function pitchStart() {
+    if (pitch.on || !navigator.mediaDevices || !window.AudioContext && !window.webkitAudioContext) return;
+    pitch.on = true;
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(stream => {
+      if (!py.live) { stream.getTracks().forEach(t => t.stop()); pitch.on = false; return; }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      pitch.stream = stream; pitch.ctx = new AC();
+      const src = pitch.ctx.createMediaStreamSource(stream);
+      pitch.an = pitch.ctx.createAnalyser(); pitch.an.fftSize = 2048;
+      src.connect(pitch.an);
+      pitch.buf = new Float32Array(pitch.an.fftSize);
+      const loop = () => { if (!pitch.on) return; pitchTick(); pitch.raf = requestAnimationFrame(loop); };
+      loop();
+    }).catch(() => { pitch.on = false; py.pitchOff = true; });
+  }
+  function pitchStop() {
+    pitch.on = false;
+    if (pitch.raf) cancelAnimationFrame(pitch.raf);
+    if (pitch.stream) pitch.stream.getTracks().forEach(t => t.stop());
+    if (pitch.ctx) try { pitch.ctx.close(); } catch (e) {}
+    pitch.stream = pitch.ctx = pitch.an = null; pitch.utt = null;
+  }
+  // Autocorrelation pitch detector; returns Hz or 0 (unvoiced / too quiet).
+  function detectPitch(buf, sr) {
+    let rms = 0; for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+    rms = Math.sqrt(rms / buf.length);
+    if (rms < 0.012) return { f: 0, rms: rms };
+    const minLag = Math.floor(sr / 500), maxLag = Math.floor(sr / 70), n = buf.length - maxLag;
+    let best = 0, bestLag = 0, e0 = 0;
+    const R = [];
+    for (let i = 0; i < n; i++) e0 += buf[i] * buf[i];
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let c = 0, e1 = 0;
+      for (let i = 0; i < n; i++) { c += buf[i] * buf[i + lag]; e1 += buf[i + lag] * buf[i + lag]; }
+      const r = c / Math.sqrt(e0 * e1 + 1e-9);
+      R[lag] = r;
+      if (r > best) best = r;
+    }
+    // the first strong peak is the real pitch (later peaks are octave errors)
+    for (let lag = minLag + 1; lag < maxLag; lag++) {
+      if (R[lag] >= best * 0.9 && R[lag] >= R[lag - 1] && R[lag] >= R[lag + 1]) { bestLag = lag; break; }
+    }
+    return { f: best > 0.75 && bestLag ? sr / bestLag : 0, rms: rms };
+  }
+  function pitchTick() {
+    if (!pitch.an) return;
+    pitch.an.getFloatTimeDomainData(pitch.buf);
+    const now = performance.now();
+    if (Date.now() < (py.ttsUntil || 0)) { pitch.utt = null; drawPitch(); return; } // ignore the model voice
+    const p = detectPitch(pitch.buf, pitch.ctx.sampleRate);
+    py.level = Math.min(1, p.rms * 12);
+    if (p.f) {
+      const st = 12 * Math.log2(p.f / 100);
+      if (!pitch.utt) pitch.utt = [];
+      pitch.utt.push({ t: now, st: st });
+      pitch.all.push(st); if (pitch.all.length > 3000) pitch.all.splice(0, 1000);
+      pitch.lastVoiced = now;
+    } else if (pitch.utt && now - pitch.lastVoiced > 350) {
+      if (pitch.utt.length >= 6) {
+        pitch.last = pitch.utt; py.toneGuess = guessTone(pitch.last);
+        const it = pyItem(); py.match = it ? toneMatch(pitch.last, it) : null;
+        const tg = document.getElementById('pyTone'); if (tg) tg.textContent = [toneMatchText(), toneGuessText()].filter(Boolean).join('  ·  ');
       }
-    };
-    try { r.start(); } catch (e) { pyRec = null; py.listening = false; py.micError = 'The microphone is busy — wait a second and tap 🎤 again.'; renderPinyin(); }
+      pitch.utt = null;
+    } else if (pitch.utt) pitch.utt.push({ t: now, st: null });
+    drawPitch();
+  }
+  // Your comfortable range → Chao tone levels 1 (low) … 5 (high)
+  function pitchRange() {
+    const a = pitch.all.slice().sort((x, y) => x - y);
+    if (a.length < 20) { const m = a.length ? a[Math.floor(a.length / 2)] : 0; return [m - 4, m + 4]; }
+    let lo = a[Math.floor(a.length * 0.08)], hi = a[Math.floor(a.length * 0.92)];
+    if (hi - lo < 6) { const mid = (hi + lo) / 2; lo = mid - 3; hi = mid + 3; }
+    return [lo, hi];
+  }
+  function toLevel(st, rg) { return 1 + 4 * (st - rg[0]) / (rg[1] - rg[0]); }
+  function smoothLevels(utt, rg) {
+    const pts = utt.filter(x => x.st != null).map(x => ({ t: x.t, v: toLevel(x.st, rg) }));
+    return pts.map((p, i) => { const w = pts.slice(Math.max(0, i - 2), i + 3).map(q => q.v).sort((a, b) => a - b); return { t: p.t, v: w[Math.floor(w.length / 2)] }; });
+  }
+  function toneGuess_(pts) {
+    if (pts.length < 5) return 0;
+    const k = Math.max(1, Math.floor(pts.length / 5));
+    const avg = a => a.reduce((x, y) => x + y.v, 0) / a.length;
+    const s = avg(pts.slice(0, k)), e = avg(pts.slice(-k));
+    let mn = Infinity, mi = 0, mx = -Infinity;
+    pts.forEach((p, i) => { if (p.v < mn) { mn = p.v; mi = i; } if (p.v > mx) mx = p.v; });
+    const pos = mi / (pts.length - 1), range = mx - mn;
+    if (range < 1) return s >= 3.3 ? 1 : s <= 2 ? 3 : -1; // level: high = tone 1, low = half 3rd tone, middle = unclear
+    if (pos > 0.2 && pos < 0.8 && s - mn >= 0.7 && e - mn >= 0.7) return 3; // dips then rises
+    if (e - s >= 0.9) return 2;                         // rises
+    if (s - e >= 1.1) return mn < 1.8 && pos > 0.6 && s < 3.3 ? 3 : 4; // falls (low fall = half 3rd tone)
+    if (mn < 1.8) return 3;                             // stays low
+    return 0;
+  }
+  function guessTone(utt) { return toneGuess_(smoothLevels(utt, pitchRange())); }
+  function toneGuessText() {
+    const it = pyItem();
+    if (!it || !py.toneGuess) return '';
+    const T = sylls(it.hanzi);
+    const shape = { 1: 'high & level → tone 1', 2: 'rising → tone 2', 3: 'low / dipping → tone 3', 4: 'falling → tone 4', '-1': 'level but low — lift it higher for tone 1' }[py.toneGuess] || '';
+    if (T.length !== 1) return shape ? '📈 Your pitch shape: ' + shape : '';
+    const want = T[0].t, ok = py.toneGuess === want;
+    return '📈 Your pitch: ' + shape + (want ? (ok ? ' ✓' : ' — target is tone ' + want) : '');
+  }
+  // Target tone shapes in Chao levels, with 3rd-tone changes in context.
+  function targetContours(T) {
+    return T.map((s, k) => {
+      const next = T[k + 1], last = k === T.length - 1;
+      if (s.t === 1) return [5, 5];
+      if (s.t === 2) return [3, 5];
+      if (s.t === 4) return [5, 1];
+      if (s.t === 3) return next && next.t === 3 ? [3, 5] : last ? [2, 1, 4] : [2, 1, 1];
+      return [3, 3];
+    });
+  }
+  function pitchCanvas() {
+    if (!py.cv) {
+      py.cv = document.createElement('canvas');
+      py.cv.className = 'pitchcv';
+    }
+    return py.cv;
+  }
+  function drawPitch() {
+    const cv = py.cv, it = pyItem();
+    if (!cv || !cv.isConnected || !it) return;
+    const dpr = window.devicePixelRatio || 1, W = Math.round((cv.clientWidth || 600) * dpr), H = Math.round((cv.clientHeight || 150) * dpr);
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const g = cv.getContext('2d'); if (!g) return;
+    g.clearRect(0, 0, W, H);
+    const pad = 14 * dpr, y = v => H - pad - (Math.max(0.5, Math.min(5.5, v)) - 1) / 4 * (H - 2 * pad);
+    g.font = (10 * dpr) + 'px system-ui'; g.fillStyle = '#999'; g.strokeStyle = '#eee'; g.lineWidth = dpr;
+    [1, 3, 5].forEach(v => { g.beginPath(); g.moveTo(0, y(v)); g.lineTo(W, y(v)); g.stroke(); });
+    g.fillText('high', 4 * dpr, y(5) - 3 * dpr); g.fillText('low', 4 * dpr, y(1) + 11 * dpr);
+    const T = sylls(it.hanzi), C = targetContours(T), slot = W / T.length;
+    // target shapes: thick green bands, one slot per syllable
+    C.forEach((c, k) => {
+      g.strokeStyle = 'rgba(52,168,83,.28)'; g.lineWidth = 16 * dpr; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath();
+      c.forEach((v, j) => { const x = slot * k + slot * (0.15 + 0.7 * j / (c.length - 1)); j ? g.lineTo(x, y(v)) : g.moveTo(x, y(v)); });
+      g.stroke();
+      g.fillStyle = '#137333'; g.fillText(marked(T[k].ch)[0] || '', slot * k + slot / 2 - 8 * dpr, H - 2 * dpr);
+    });
+    // your voice: blue line, stretched over the same width
+    const utt = pitch.utt || pitch.last;
+    if (utt && utt.length > 2) {
+      const rg = pitchRange(), pts = smoothLevels(utt, rg);
+      if (pts.length > 1) {
+        const t0 = utt[0].t, t1 = pitch.utt ? Math.max(utt[utt.length - 1].t, t0 + 900) : utt[utt.length - 1].t;
+        g.strokeStyle = pitch.utt ? '#1a73e8' : '#174ea6'; g.lineWidth = 3.5 * dpr; g.lineCap = 'round';
+        g.beginPath();
+        let prevT = null;
+        pts.forEach(p => {
+          const x = slot * 0.15 / T.length + (W - slot * 0.3 / T.length) * (p.t - t0) / Math.max(1, t1 - t0);
+          if (prevT == null || p.t - prevT > 120) g.moveTo(x, y(p.v)); else g.lineTo(x, y(p.v));
+          prevT = p.t;
+        });
+        g.stroke();
+      }
+    }
+    // volume pulse
+    if (py.live) { g.fillStyle = py.level > 0.15 ? '#d93025' : '#ccc'; g.beginPath(); g.arc(W - 10 * dpr, 10 * dpr, (4 + 8 * (py.level || 0)) * dpr, 0, 7); g.fill(); }
+  }
+
+  // "👂 You're saying: téng (疼)"
+  function hearingText(t) {
+    const p = (window.pinyinPro && /[\u4e00-\u9fff]/.test(t)) ? marked(t).join(' ') : '';
+    return '👂 You\'re saying: ' + (p ? p + '  (' + t + ')' : t);
+  }
+
+  // How close your pitch shape is to the target tones: % per syllable (time split evenly across syllables).
+  function toneMatch(utt, it) {
+    const T = sylls(it.hanzi), C = targetContours(T);
+    const pts = smoothLevels(utt, pitchRange());
+    if (pts.length < 6 || !T.length) return null;
+    const t0 = pts[0].t, span = Math.max(1, pts[pts.length - 1].t - t0);
+    const per = T.map((s, k) => {
+      const mine = pts.filter(p => (p.t - t0) / span >= k / T.length && (p.t - t0) / span <= (k + 1) / T.length);
+      if (mine.length < 2) return { ch: s.ch, pct: 0 };
+      const c = C[k];
+      // compare shapes after removing each one's average height offset a little (people speak higher/lower)
+      const tgt = mine.map((p, i) => { const x = i / (mine.length - 1) * (c.length - 1), j = Math.min(c.length - 2, Math.floor(x)); return c[j] + (c[j + 1] - c[j]) * (x - j); });
+      const off = (mine.reduce((a, p) => a + p.v, 0) - tgt.reduce((a, v) => a + v, 0)) / mine.length * 0.5;
+      const mad = mine.reduce((a, p, i) => a + Math.abs(p.v - off - tgt[i]), 0) / mine.length;
+      return { ch: s.ch, pct: Math.max(0, Math.min(100, Math.round(100 - mad * 45))) };
+    });
+    return { pct: Math.round(per.reduce((a, x) => a + x.pct, 0) / per.length), per: per };
+  }
+  function toneMatchText() {
+    const it = pyItem();
+    if (!it || !py.match) return '';
+    return '🎵 Tone match ' + py.match.pct + '%' + (py.match.per.length > 1 ? ' · ' + py.match.per.map(x =>
+      (marked(x.ch)[0] || x.ch) + ' ' + (x.pct >= 75 ? '✓' : x.pct >= 50 ? '~' : '✗')).join('  ') : '');
   }
 
   function pyItem() { return py.drill && py.drill.items[py.idx]; }
 
-  function pyAttempt(alts) {
-    const it = pyItem();
-    const g = bestGrade(it.hanzi, alts);
+  function pyAttempt(g) {
     py.last = g;
     if (!py.first) py.first = g; // stats use the first try, so progress is honest
     py.tries++;
+    py.hearing = '';
     renderPinyin();
-    if (py.check) { setTimeout(() => pyNext(), 900); return; }
-    if (g.ok) { setTimeout(() => { if (py.last === g) pyNext(); }, 1400); }
+    if (py.check) { py.advancing = true; setTimeout(() => pyNext(), 800); return; }
+    if (g.ok || (py.live && py.tries >= 5)) { py.advancing = true; setTimeout(() => { if (py.last === g) pyNext(); }, g.ok ? 1100 : 2500); }
   }
 
   function pyNext() {
@@ -1145,7 +1344,8 @@
         .map(r => ({ i: /^[yw]?$/.test(r.i) ? '' : r.i, f: r.f, t: r.t, okI: r.okI, okF: r.okF, okT: r.okT })) });
       py.recent.push(it.hanzi);
     }
-    py.idx++; py.tries = 0; py.first = null; py.last = null; py.micError = '';
+    py.idx++; py.tries = 0; py.first = null; py.last = null; py.micError = ''; py.advancing = false; py.hearing = ''; py.toneGuess = 0; py.match = null;
+    py.baseIdx = py.resLen || 0; pitch.last = null; pitch.utt = null;
     if (py.idx >= py.drill.items.length) return pyFinishRound();
     renderPinyin();
     setTimeout(() => { const n = pyItem(); if (n && !py.check) pySay(n.hanzi); }, 250);
@@ -1167,6 +1367,7 @@
   }
 
   function pyFinishRound() {
+    pyMicOff();
     py.screen = 'saving'; renderPinyin();
     const before = py.stats;
     call('savePinyinResults', 'zh', py.results, py.check).then(st => {
@@ -1230,16 +1431,22 @@
             (g.ok ? ['✅ Perfect!', '🌟 Excellent!', '✅ Spot on!'][py.idx % 3]
               : (py.tries >= 3 ? 'Good effort — let\'s move on and come back to it later.' : 'Close! Try again.')) + '</div>' +
             '<div class="sub" style="text-align:center">I heard: ' + escapeHtml(g.text || '—') + '</div>' +
+            (!g.ok && py.live && py.tries < 5 ? '<div class="sub" style="text-align:center">🎤 Still listening — just say it again.</div>' : '') +
             (!g.ok ? '<div class="pytip">💡 ' + pyTipFor(g).replace(/«([^»]+)»/g, '<b>$1</b>') + '</div>' : '')) : '') +
+        '<div id="pyPitch"></div>' +
+        '<div class="pylive"><span id="pyHearing">' + (py.live ? (py.ready ? escapeHtml(py.hearing || '👂 Listening… say it whenever you\'re ready') : '⏳ Starting mic…') : '') + '</span>' +
+        '<span id="pyTone">' + escapeHtml([toneMatchText(), toneGuessText()].filter(Boolean).join('  ·  ')) + '</span></div>' +
         (py.micError ? '<div class="loginerr">' + escapeHtml(py.micError) + '</div>' : '') +
         '<div class="pybtns">' +
           (py.check ? '' : '<button class="secondary" id="pyHear">🔊 Listen</button><button class="secondary" id="pySlow">🐢 Slow</button>') +
-          '<button class="go' + (py.listening && py.ready ? ' rec' : '') + '" id="pyMic">' + (py.listening ? (py.ready ? '🔴 Speak now… (tap when done)' : '⏳ Starting mic…') : g && !g.ok && !py.check ? '🎤 Try again' : '🎤 Say it') + '</button>' +
+          '<button class="go' + (py.live ? ' rec' : '') + '" id="pyMic">' + (py.live ? '⏹ Stop mic' : '🎤 Start mic') + '</button>' +
           '<button class="secondary" id="pyNext">' + (g && (g.ok || py.tries >= 3) ? 'Next ▶' : '⏭ Skip') + '</button>' +
         '</div>';
       const q = s => div.querySelector(s);
       if (q('#pyHear')) { q('#pyHear').onclick = () => pySay(it.hanzi); q('#pySlow').onclick = () => pySay(it.hanzi, true); }
-      q('#pyMic').onclick = () => pyListen(pyAttempt);
+      q('#pyMic').onclick = () => { if (py.live) { pyMicOff(); renderPinyin(); } else pyMicOn(); };
+      q('#pyPitch').appendChild(pitchCanvas());
+      setTimeout(drawPitch, 0);
       q('#pyNext').onclick = pyNext;
       return div;
     }
@@ -1727,7 +1934,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-27-mic';
+  const APP_VERSION = '2026-10-27-live';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
@@ -1831,6 +2038,7 @@
     const log = document.getElementById('log');
     log.innerHTML = '';
     if (skill === 'pinyin' && lang() === 'zh') { log.appendChild(pinyinCard()); return; }
+    if (py.live) pyMicOff();
     const view = state[lang()].view;
     if (!view.length) { log.appendChild(welcomeCard()); return; }
     const st = state[lang()];
