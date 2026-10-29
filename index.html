@@ -163,6 +163,31 @@
       transition: opacity .3s, transform .3s; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
     #toast.show { opacity: 1; transform: translate(-50%, 0); }
     #toast.big { font-size: 16px; padding: 14px 20px; background: #137333; }
+    /* ---------- Phone layout ---------- */
+    @media (max-width: 700px) {
+      body { padding: 6px; }
+      .bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 4px; margin-bottom: 4px; scrollbar-width: none; }
+      .bar::-webkit-scrollbar { display: none; }
+      .bar select, .bar button { flex: 0 0 auto; font-size: 14px; padding: 6px 8px; }
+      #ver { display: none; }
+      .hint { font-size: 11px; margin: 0 2px 2px; }
+      .hint #hint { display: none; }
+      .msg { font-size: 16px; padding: 7px 9px; max-width: 96%; }
+      #pitchStrip { height: 40px; }
+      #pitchCap { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .chips { padding-top: 4px; gap: 4px; }
+      .chip { font-size: 13px; padding: 5px 10px; }
+      .row { gap: 4px; margin-top: 6px; align-items: stretch; }
+      #mic { padding: 6px 12px; font-size: 22px; flex: 0 0 auto; }
+      .pause { flex: 0 0 auto; width: 58px; font-size: 12px; padding: 2px; }
+      #padBtn { flex: 0 0 auto; padding: 6px; }
+      textarea { min-width: 0; height: 46px; font-size: 16px; padding: 6px 8px; }
+      #sendBtn { flex: 0 0 auto; padding: 6px 12px; }
+      .welcome { padding: 10px; }
+      .pyword { font-size: 44px; }
+      .pitchcv { height: 120px; }
+      .pybtns .go { padding: 12px; font-size: 16px; }
+    }
   </style>
 </head>
 <body>
@@ -247,6 +272,10 @@
   </div>
 
 <script>
+  // Phones (Android / iPhone) can't share the microphone between speech recognition and the pitch display,
+  // so there the two take turns. Computers run both together.
+  var IS_PHONE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  if (IS_PHONE) document.documentElement.classList.add('phone');
   // ---------- Backend bridge ----------
   // Works two ways:
   //  • Inside Google (Sheets sidebar / Apps Script web app): uses google.script.run.
@@ -1110,8 +1139,8 @@
   function pyMicOn() {
     if (!SR) { alert('Pronunciation checking needs speech recognition — use Chrome (desktop or Android) or Edge.'); return; }
     py.live = true; py.micError = ''; py.hearing = '';
-    pyRecStart();
-    pitch.want = true; pitchStart();
+    if (!IS_PHONE || !py.pitchMode) pyRecStart();
+    if (!IS_PHONE || py.pitchMode) { pitch.want = true; pitchStart(); }
     renderPinyin();
   }
   function pyMicOff() {
@@ -1148,7 +1177,7 @@
     r.onend = () => { // the browser stops after a while; keep going while the mic is on
       if (pyRec !== r) return;
       pyRec = null;
-      if (py.live) setTimeout(() => { if (py.live && !pyRec) pyRecStart(); }, 200);
+      if (py.live && !(IS_PHONE && py.pitchMode)) setTimeout(() => { if (py.live && !pyRec) pyRecStart(); }, 200);
     };
     try { r.start(); } catch (e) { pyRec = null; }
   }
@@ -1353,16 +1382,31 @@
   }
 
   // ---------- Pitch strip under the chat (all languages, all exercises) ----------
-  var stripOn = (function () { try { return localStorage.getItem('tutorPitch') !== 'off'; } catch (e) { return true; } })();
+  // Computer: 〰 shows/hides the strip (pitch runs alongside your spoken answers).
+  // Phone: 〰 switches the mic into pitch-only mode (see your pitch; nothing is sent), tap 〰 again to answer normally.
+  var stripOn = IS_PHONE ? false : (function () { try { return localStorage.getItem('tutorPitch') !== 'off'; } catch (e) { return true; } })();
   function toggleStrip() {
     stripOn = !stripOn;
-    try { localStorage.setItem('tutorPitch', stripOn ? 'on' : 'off'); } catch (e) {}
+    if (!IS_PHONE) try { localStorage.setItem('tutorPitch', stripOn ? 'on' : 'off'); } catch (e) {}
+    if (IS_PHONE && !stripOn && pitch.on) { pitch.want = false; pitchStop(); document.getElementById('mic').classList.remove('listening'); document.getElementById('mic').textContent = '🎤'; }
     showStrip();
+    idleMicHint();
+    if (IS_PHONE) toast(stripOn ? '〰 Pitch mode: tap 🎤, speak, see your pitch. Tap 〰 again to answer normally.' : '🎤 Answer mode: your speech is sent to the tutor again.');
+  }
+  // Phone pitch-only mic: tap to start, tap to stop.
+  function phonePitchMic() {
+    const mic = document.getElementById('mic');
+    if (pitch.on) { pitch.want = false; pitchStop(); stripCaption(); drawStrip(); mic.classList.remove('listening'); mic.textContent = '🎤'; return; }
+    speechSynthesis.cancel();
+    pitch.want = true; pitch.last = null; pitchStart();
+    mic.classList.add('listening'); mic.textContent = '⏹';
   }
   function showStrip() {
     const box = document.getElementById('pitchBox');
     if (!box) return;
     box.style.display = stripOn && skill !== 'pinyin' ? '' : 'none';
+    const cap = document.getElementById('pitchCap');
+    if (cap && IS_PHONE && stripOn && !pitch.last) cap.textContent = '〰 Pitch mode — tap 🎤 and shadow the tutor\'s sentence. Tap 〰 to answer normally.';
     const b = document.getElementById('pitchBtn'); if (b) b.classList.toggle('on', stripOn);
     drawStrip();
   }
@@ -1518,18 +1562,26 @@
             '<div class="sub" style="text-align:center">I heard: ' + escapeHtml(g.text || '—') + '</div>' +
             (py.live ? '<div class="sub" style="text-align:center">🎤 Still listening — say it again any time.</div>' : '') +
             (!g.ok ? '<div class="pytip">💡 ' + pyTipFor(g).replace(/«([^»]+)»/g, '<b>$1</b>') + '</div>' : '')) : '') +
+        (IS_PHONE ? '<div class="sub" style="text-align:center">' + (py.pitchMode ? '〰 Pitch mode — match the green tone shapes. Switch to ✅ Check mode to check the syllables.' : '✅ Check mode — syllables are checked. Switch to 〰 Pitch mode to see your pitch line.') + '</div>' : '') +
         '<div id="pyPitch"></div>' +
         '<div class="pylive"><span id="pyHearing">' + (py.live ? (py.ready ? escapeHtml(py.hearing || '👂 Listening… say it whenever you\'re ready') : '⏳ Starting mic…') : '') + '</span>' +
         '<span id="pyTone">' + escapeHtml([toneMatchText(), toneGuessText()].filter(Boolean).join('  ·  ')) + '</span></div>' +
         (py.micError ? '<div class="loginerr">' + escapeHtml(py.micError) + '</div>' : '') +
         '<div class="pybtns">' +
           (py.check ? '' : '<button class="secondary" id="pyHear">🔊 Listen</button><button class="secondary" id="pySlow">🐢 Slow</button>') +
+          (IS_PHONE && !py.check ? '<button class="secondary" id="pyMode">' + (py.pitchMode ? '✅ Check mode' : '〰 Pitch mode') + '</button>' : '') +
           '<button class="go' + (py.live ? ' rec' : '') + '" id="pyMic">' + (py.live ? '⏹ Stop mic' : '🎤 Start mic') + '</button>' +
           '<button class="' + (g && (g.ok || py.check) ? 'go' : 'secondary') + '" id="pyNext">' + (g ? 'Next ▶' : '⏭ Skip') + '</button>' +
         '</div>';
       const q = s => div.querySelector(s);
       if (q('#pyHear')) { q('#pyHear').onclick = () => pySay(it.hanzi); q('#pySlow').onclick = () => pySay(it.hanzi, true); }
       q('#pyMic').onclick = () => { if (py.live) { pyMicOff(); renderPinyin(); } else pyMicOn(); };
+      if (q('#pyMode')) q('#pyMode').onclick = () => {
+        const was = py.live; if (was) pyMicOff();
+        py.pitchMode = !py.pitchMode;
+        toast(py.pitchMode ? '〰 Pitch mode: see your pitch and tone match. (Phones can\'t check words at the same time.)' : '✅ Check mode: each syllable is checked.');
+        if (was) pyMicOn(); else renderPinyin();
+      };
       q('#pyPitch').appendChild(pitchCanvas());
       setTimeout(drawPitch, 0);
       q('#pyNext').onclick = pyNext;
@@ -2019,7 +2071,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-27-pron';
+  const APP_VERSION = '2026-10-29-phone';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
@@ -2755,7 +2807,8 @@
 
   function idleMicHint() {
     if (rec) return;
-    document.getElementById('input').placeholder = holdMode() ? 'Hold 🎤 while you speak, release to send — or type…' : 'Type or speak…';
+    document.getElementById('input').placeholder = IS_PHONE && stripOn ? '〰 Pitch mode: tap 🎤' : IS_PHONE ? (holdMode() ? 'Hold 🎤 or type…' : 'Type or tap 🎤…')
+      : holdMode() ? 'Hold 🎤 while you speak, release to send — or type…' : 'Type or speak…';
     document.getElementById('mic').title = holdMode() ? 'Hold to talk, release to send' : 'Tap to talk';
   }
 
@@ -2763,7 +2816,7 @@
   var holding = false;
   (function wireMic() {
     const b = document.getElementById('mic');
-    b.addEventListener('click', () => { if (!holdMode()) listen(false); });
+    b.addEventListener('click', () => { if (IS_PHONE && stripOn) { phonePitchMic(); return; } if (!holdMode()) listen(false); });
     b.addEventListener('pointerdown', e => {
       if (!holdMode() || b.disabled) return;
       e.preventDefault();
@@ -2797,6 +2850,7 @@
   }
 
   async function listen(hold) {
+    if (IS_PHONE && stripOn) return; // phone pitch mode: the click handler runs the pitch-only mic
     if (rec) { if (!hold) rec.stopNow(); return; } // tap ⏹ = send now
     if (!SR) {
       alert('Speech recognition is not available in this browser. Use Chrome, or the mic key on your phone keyboard.');
@@ -2843,7 +2897,7 @@
       box.placeholder = oldPlaceholder;
       idleMicHint();
       const t = gotResult ? text() : '';
-      if (hold && !t) box.placeholder = 'Didn\'t catch anything — keep holding 🎤 while you speak';
+      if (hold && !t) { box.placeholder = IS_PHONE ? 'Didn\'t catch it — hold 🎤' : 'Didn\'t catch anything — keep holding 🎤 while you speak'; toast('🎤 Didn\'t catch that — keep holding 🎤 until you finish speaking.'); }
       if (gotResult) box.value = '';
       if (t) sendText('[voice] ' + t);
     }
@@ -2893,7 +2947,7 @@
     }
 
     rec = { stopNow: stopNow };
-    if (stripOn) { pitch.want = true; pitch.last = null; pitchStart(); }
+    if (stripOn && !IS_PHONE) { pitch.want = true; pitch.last = null; pitchStart(); }
     mic.classList.add('listening');
     mic.textContent = hold ? '🔴' : '⏹';
     box.placeholder = hold ? 'Listening… release to send' : wait > 0
