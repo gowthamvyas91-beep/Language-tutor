@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
@@ -129,7 +130,7 @@
     .pitem input:checked + span b { text-decoration: line-through; color: #777; }
     .mitem { padding: 6px 0; border-top: 1px solid #f1f3f4; font-size: 14px; }
     .mitem a { font-size: 12px; color: #1a73e8; }
-    body.pinyin .row, body.pinyin #chips, body.pinyin #phases, body.pinyin #pad { display: none !important; }
+    body.pinyin .composer, body.pinyin .subbar, body.pinyin #phases { display: none !important; }
     .pyhead { display: flex; justify-content: space-between; align-items: center; }
     .pyword { font-size: 52px; text-align: center; margin: 14px 0 2px; letter-spacing: 4px; }
     .pypy { font-size: 22px; text-align: center; color: #1a4fb0; margin-bottom: 2px; }
@@ -157,91 +158,225 @@
     .pyverdict.good { color: #137333; }
     .pyb { display: grid; grid-template-columns: 90px 1fr 44px; gap: 8px; align-items: center; font-size: 13px; }
     .pyb .bar100 { margin: 0; }
+.fcword { font-size: 40px; text-align: center; margin: 18px 0 6px; font-weight: 500; word-break: break-word; }
+    .fcread { font-size: 20px; text-align: center; color: var(--blue-d); }
+    .fcmean { font-size: 19px; text-align: center; margin: 10px 0; line-height: 1.4; }
+    .fcback { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 6px; }
+    .fcnew { background: #e6f4ea; color: #137333; border-radius: 8px; padding: 1px 6px; font-size: 11px; }
+    .grade { flex: 1 1 0; border-radius: 12px; padding: 10px 4px; font-size: 15px; font-weight: 600; display: flex; flex-direction: column; align-items: center; }
+    .grade small { font-weight: 400; font-size: 11px; opacity: .85; }
+    .grade.again { background: #d93025; } .grade.hard { background: #f29900; } .grade.good { background: #188038; } .grade.easy { background: #1a73e8; }
+    .fcstats { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; gap: 6px; margin: 10px 0; }
+    .fcstats b { display: block; font-size: 22px; } .fcstats small { font-size: 12px; color: var(--ink2); }
+    .seg { display: flex; gap: 6px; margin: 6px 0 10px; flex-wrap: wrap; }
+    .seg button { flex: 1 1 140px; background: #f1f3f4; color: var(--ink); border-radius: 12px; font-size: 13px; padding: 8px; }
+    .seg button.on { background: var(--blue-l); color: var(--blue-d); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .fcdel { background: none; color: var(--ink2); padding: 0 4px; font-size: 14px; }
+    .fcmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 6px 0; }
+    .fcmap label { font-size: 12px; color: var(--ink2); display: flex; flex-direction: column; gap: 3px; }
+    .fcmap select { font-size: 14px; padding: 6px; border-radius: 8px; border: 1px solid var(--line); }
+    .fcprev { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 6px; table-layout: fixed; }
+    .fcprev td, .fcprev th { border: 1px solid #eee; padding: 4px 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fcprev th { background: #f8f9fa; font-weight: 600; }
+#todayBar { display: none; margin: 6px 12px 0; background: var(--blue-l); border-radius: 12px; padding: 6px 8px 6px 12px; font-size: 13px; color: var(--blue-d);
+      display: flex; justify-content: space-between; align-items: center; gap: 8px; flex: 0 0 auto; }
+    #todayBar .pill { padding: 4px 10px; font-size: 13px; margin-left: 4px; }
+    .steps { margin: 12px 0; }
+    .step { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid #f1f3f4; }
+    .step .dot { flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--blue-l); color: var(--blue-d); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+    .step.done .dot { background: #e6f4ea; color: #137333; }
+    .step.done b { color: var(--ink2); text-decoration: line-through; }
     .msg.cele { background: linear-gradient(135deg, #fff8e1, #e6f4ea); border: 1px solid #f9d77e; font-weight: 600; max-width: 100%; }
     #toast { position: fixed; left: 50%; bottom: 90px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; z-index: 60;
       background: #202124; color: #fff; border-radius: 12px; padding: 10px 16px; font-size: 14px; max-width: 92vw; text-align: center;
       transition: opacity .3s, transform .3s; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
     #toast.show { opacity: 1; transform: translate(-50%, 0); }
     #toast.big { font-size: 16px; padding: 14px 20px; background: #137333; }
-    /* ---------- Phone layout ---------- */
-    @media (max-width: 700px) {
-      body { padding: 6px; }
-      .bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 4px; margin-bottom: 4px; scrollbar-width: none; }
-      .bar::-webkit-scrollbar { display: none; }
-      .bar select, .bar button { flex: 0 0 auto; font-size: 14px; padding: 6px 8px; }
-      #ver { display: none; }
-      .hint { font-size: 11px; margin: 0 2px 2px; }
-      .hint #hint { display: none; }
-      .msg { font-size: 16px; padding: 7px 9px; max-width: 96%; }
+    #pitchModeBar { background: #fef7e0; border: 1px solid #f9d77e; border-radius: 8px; padding: 6px 8px; font-size: 13px; margin-top: 4px; }
+    #pitchModeBar button { padding: 4px 10px; font-size: 13px; margin-left: 4px; }
+    .mtlink { font-size: 12px; color: #1a73e8; text-decoration: none; margin: 0 6px; white-space: nowrap; }
+    .mt div { padding: 6px 0; border-bottom: 1px solid #f1f3f4; font-size: 14px; line-height: 1.45; }
+
+    /* ================= Design layer (clean, Google-Translate-like) ================= */
+    :root { --blue: #1a73e8; --blue-d: #174ea6; --blue-l: #e8f0fe; --ink: #202124; --ink2: #5f6368; --line: #dadce0; --bg: #f8f9fa; --card: #fff; }
+    html, body { height: 100%; }
+    body { font-family: "Google Sans", Roboto, system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink);
+      padding: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+    select, button, textarea { font-family: inherit; }
+    button { background: var(--blue); }
+    button.secondary { background: #f1f3f4; color: var(--ink); }
+
+    .appbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+    .brand { font-weight: 600; font-size: 18px; color: var(--ink2); white-space: nowrap; }
+    .grow { flex: 1; }
+    .langchip { border: 1px solid var(--line); background: var(--blue-l); color: var(--blue-d); font-weight: 600; border-radius: 20px; padding: 8px 14px;
+      font-size: 15px; max-width: 60vw; appearance: none; -webkit-appearance: none; cursor: pointer; }
+    button.icon { background: transparent; color: var(--ink2); border: none; font-size: 20px; padding: 6px 8px; border-radius: 50%; min-width: 40px; }
+    button.icon:hover { background: #f1f3f4; }
+
+    .tabs { display: flex; gap: 4px; padding: 0 8px; background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; flex: 0 0 auto;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { background: none; color: var(--ink2); border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 10px 12px 8px;
+      font-size: 14px; font-weight: 500; white-space: nowrap; flex: 0 0 auto; }
+    .tab.on { color: var(--blue); border-bottom-color: var(--blue); }
+
+    .subbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; overflow-x: auto; flex: 0 0 auto; scrollbar-width: none; }
+    .subbar::-webkit-scrollbar { display: none; }
+    .pill { flex: 0 0 auto; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 18px; padding: 6px 12px; font-size: 14px; }
+    .pill.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    #sheetBg { display: none; position: fixed; inset: 0; background: rgba(32,33,36,.4); z-index: 70; }
+    #sheet { position: fixed; top: 0; right: 0; bottom: 0; width: min(340px, 88vw); background: var(--card); z-index: 71; transform: translateX(105%);
+      transition: transform .2s; box-shadow: -4px 0 20px rgba(0,0,0,.2); padding: 12px 16px; overflow-y: auto; }
+    body.sheet #sheet { transform: none; }
+    body.sheet #sheetBg { display: block; }
+    .sheethead { display: flex; justify-content: space-between; align-items: center; font-size: 17px; margin-bottom: 6px; }
+    .srow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f1f3f4; font-size: 14px; }
+    .srow select { max-width: 60%; border: 1px solid var(--line); border-radius: 8px; padding: 6px; font-size: 14px; background: #fff; }
+    .toggle { background: #f1f3f4; color: var(--ink); border: none; border-radius: 16px; padding: 6px 12px; font-size: 14px; }
+    #pitchBtn.on { background: var(--blue-l); color: var(--blue-d); }
+    .sheethint { font-size: 12px; color: var(--ink2); margin-top: 10px; line-height: 1.5; }
+    .sheetwho { margin: 4px 0 6px; }
+
+    #micBanner { margin: 8px 12px 0; flex: 0 0 auto; }
+    #phases { margin: 4px 12px 0; flex: 0 0 auto; }
+    .ph { font-size: 10px; }
+    #log { flex: 1 1 auto; overflow-y: auto; padding: 8px 12px 12px; -webkit-overflow-scrolling: touch; }
+
+    .msg { max-width: 88%; margin: 10px 0; padding: 12px 14px; border-radius: 18px; line-height: 1.55; font-size: 16px; white-space: pre-wrap; word-wrap: break-word; }
+    .tutor { background: var(--card); border: 1px solid var(--line); border-radius: 4px 18px 18px 18px; box-shadow: 0 1px 2px rgba(60,64,67,.08); position: relative; padding-bottom: 34px; }
+    .tutor .say { position: absolute; left: 8px; bottom: 4px; background: none; color: var(--blue); border: none; font-size: 17px; padding: 2px 6px; border-radius: 50%; }
+    .tutor .say:hover { background: var(--blue-l); }
+    .me { background: var(--blue-l); color: var(--blue-d); margin-left: auto; border-radius: 18px 4px 18px 18px; }
+    .me.q { background: #fef7e0; color: #5f4200; }
+    .err { background: #fce8e6; color: #a50e0e; border-radius: 12px; }
+    .meta { margin: -6px 0 8px 8px; color: var(--ink2); }
+    .welcome { border-radius: 16px; border-color: var(--line); padding: 16px; box-shadow: 0 1px 2px rgba(60,64,67,.08); }
+    .welcome .go { border-radius: 24px; }
+    .resume { border-radius: 12px; }
+
+    .composer { flex: 0 0 auto; background: var(--card); border-top: 1px solid var(--line); padding: 6px 12px calc(8px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 8px rgba(60,64,67,.06); }
+    .chips { padding: 2px 0 6px; gap: 6px; scrollbar-width: none; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip { background: var(--card); color: var(--blue-d); border: 1px solid var(--line); border-radius: 18px; padding: 6px 12px; font-size: 13px; }
+    .chip.on { background: #fef7e0; border-color: #f9d77e; color: #5f4200; }
+    .inputwrap { display: flex; align-items: flex-end; gap: 4px; border: 1px solid var(--line); border-radius: 24px; padding: 4px 4px 4px 8px; background: #fff; }
+    .inputwrap:focus-within { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+    #input { flex: 1; min-width: 0; border: none; outline: none; resize: none; height: 40px; max-height: 120px; padding: 9px 6px; font-size: 16px; line-height: 1.4; background: transparent; }
+    .sendbtn { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; padding: 0; font-size: 18px; background: var(--blue); color: #fff; }
+    .sendbtn:disabled { background: #bdc1c6; }
+    #padBtn { flex: 0 0 auto; height: 40px; }
+    .microw { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin-top: 8px; }
+    .microw .pause { justify-self: start; width: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 16px; padding: 6px 8px; font-size: 13px; background: #fff; color: var(--ink2); }
+    .microw .mtlink { justify-self: end; font-size: 12px; }
+    #mic { width: 64px; height: 64px; border-radius: 50%; font-size: 28px; padding: 0; background: var(--blue); color: #fff; border: none;
+      box-shadow: 0 2px 6px rgba(26,115,232,.4); display: flex; align-items: center; justify-content: center; }
+    #mic.listening { background: #d93025; box-shadow: 0 0 0 8px rgba(217,48,37,.18); animation: pulse 1.2s infinite; }
+    #mic:disabled { background: #bdc1c6; box-shadow: none; }
+    #pad { margin: 0 0 8px; }
+    .pitchbox { margin: 2px 0 6px; }
+    #pitchModeBar { margin: 2px 0 6px; }
+
+    @media (max-width: 600px) {
+      .brand span { display: none; }
+      .msg { max-width: 94%; font-size: 16px; }
+      .tab { padding: 10px 10px 8px; font-size: 13px; }
+      .microw .pause { font-size: 12px; }
       #pitchStrip { height: 40px; }
       #pitchCap { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .chips { padding-top: 4px; gap: 4px; }
-      .chip { font-size: 13px; padding: 5px 10px; }
-      .row { gap: 4px; margin-top: 6px; align-items: stretch; }
-      #mic { padding: 6px 12px; font-size: 22px; flex: 0 0 auto; }
-      .pause { flex: 0 0 auto; width: 58px; font-size: 12px; padding: 2px; }
-      #padBtn { flex: 0 0 auto; padding: 6px; }
-      textarea { min-width: 0; height: 46px; font-size: 16px; padding: 6px 8px; }
-      #sendBtn { flex: 0 0 auto; padding: 6px 12px; }
-      .welcome { padding: 10px; }
       .pyword { font-size: 44px; }
       .pitchcv { height: 120px; }
-      .pybtns .go { padding: 12px; font-size: 16px; }
+      .welcome { padding: 12px; }
+      .pybtns .go { flex: 1 1 100%; order: -1; }
+      .pybtns .secondary { flex: 1 1 0; padding: 10px 4px; font-size: 14px; }
+    }
+    @media (min-width: 900px) {
+      #log, .composer > * { max-width: 860px; margin-left: auto; margin-right: auto; }
+      #log { width: 100%; }
     }
   </style>
 </head>
 <body>
-  <div class="bar">
-    <select id="lang" onchange="onLangChange()" autocomplete="off">
+  <!-- App bar -->
+  <header class="appbar">
+    <div class="brand">🗣<span> Tutor</span></div>
+    <select id="lang" class="langchip" onchange="onLangChange()" autocomplete="off">
       <option value="zh">🇨🇳 Mandarin</option>
       <option value="es">🇦🇷 Argentine Spanish</option>
       <option value="de">🇩🇪 German</option>
       <option value="__setup">🌐 Languages…</option>
     </select>
-    <select id="level" onchange="onLevelChange()">
+    <span class="grow"></span>
+    <button class="icon" id="progBtn" onclick="showProgress()" title="Goals, streak and tests">📈</button>
+    <button class="icon" id="menuBtn" onclick="toggleSheet()" title="Settings">☰</button>
+  </header>
+
+  <!-- Skill tabs (built from the #skill menu) -->
+  <nav class="tabs" id="tabs"></nav>
+
+  <!-- Session bar -->
+  <div class="subbar">
+    <select id="level" class="pill" onchange="onLevelChange()">
       <option value="beginner">Beginner</option>
       <option value="intermediate">Intermediate</option>
       <option value="fluent">Fluent</option>
     </select>
-    <select id="skill" onchange="onSkillChange()">
-      <option value="guided">⭐ Guided practice</option>
-      <option value="speaking">🗣 Speaking</option>
-      <option value="reading">📖 Reading</option>
-      <option value="writing">✏️ Writing</option>
-      <option value="test">🧪 Level test</option>
-      <option value="pinyin">🎯 Pinyin & tones</option>
-    </select>
-    <select id="audience" onchange="onAudienceChange()" title="Who is learning: sets age-appropriate themes">
-      <option value="adults">🧑 Adults</option>
-      <option value="teens">🧑‍🎓 Teens</option>
-      <option value="kids">🧒 Kids</option>
-    </select>
-    <select id="mode" onchange="onModeChange()">
-      <option value="auto">Auto (Haiku → Sonnet)</option>
-      <option value="haiku">Haiku only</option>
-      <option value="sonnet">Sonnet only</option>
-    </select>
-    <select id="activity"></select>
-    <button onclick="startSession()">Start</button>
-    <button class="secondary" onclick="resetSession()">New</button>
-    <button class="secondary" id="spk" onclick="toggleSpeak()">🔊 On</button>
-    <button class="secondary" id="progBtn" onclick="showProgress()" title="Goals, streak and tests">📈</button>
-    <button class="secondary" id="pitchBtn" onclick="toggleStrip()" title="Show your voice pitch while you speak">〰</button>
-    <button class="secondary" id="wordBtn" onclick="toggleWords()" title="Tap or hover a word to see its meaning">🔍 Words</button>
-    <span class="sub" id="ver" style="align-self:center;font-size:11px;color:#999"></span>
-    <button class="secondary" id="cfgBtn" onclick="reconnect()" title="Switch learner / settings" style="display:none">⚙</button>
+    <select id="activity" class="pill"></select>
+    <span class="grow"></span>
+    <button class="pill primary" onclick="startSession()">▶ Start</button>
+    <button class="pill" onclick="resetSession()" title="Start over">↺ New</button>
   </div>
-  <div class="hint"><span id="who" class="who" style="display:none"></span> <span id="hint"></span></div>
+
+  <!-- Settings sheet -->
+  <div id="sheetBg" onclick="toggleSheet(false)"></div>
+  <aside id="sheet">
+    <div class="sheethead"><b>Settings</b><button class="icon" onclick="toggleSheet(false)">✕</button></div>
+    <div class="sheetwho"><span id="who" class="who" style="display:none"></span></div>
+    <label class="srow"><span>Skill</span>
+      <select id="skill" onchange="onSkillChange()">
+        <option value="today">🏠 Today</option>
+        <option value="guided">⭐ Guided practice</option>
+        <option value="speaking">🗣 Speaking</option>
+        <option value="reading">📖 Reading</option>
+        <option value="writing">✏️ Writing</option>
+        <option value="test">🧪 Level test</option>
+        <option value="pinyin">🎯 Pinyin & tones</option>
+        <option value="cards">🃏 Flashcards</option>
+      </select></label>
+    <label class="srow"><span>Who is learning</span>
+      <select id="audience" onchange="onAudienceChange()" title="Who is learning: sets age-appropriate themes">
+        <option value="adults">🧑 Adults</option>
+        <option value="teens">🧑‍🎓 Teens</option>
+        <option value="kids">🧒 Kids</option>
+      </select></label>
+    <label class="srow"><span>AI tutor</span>
+      <select id="mode" onchange="onModeChange()">
+        <option value="auto">Auto (Haiku → Sonnet)</option>
+        <option value="haiku">Haiku only</option>
+        <option value="sonnet">Sonnet only</option>
+      </select></label>
+    <div class="srow"><span>Tutor voice</span><button class="toggle" id="spk" onclick="toggleSpeak()">🔊 On</button></div>
+    <div class="srow"><span>Tap words for meanings</span><button class="toggle" id="wordBtn" onclick="toggleWords()" title="Tap or hover a word to see its meaning">🔍 Words</button></div>
+    <div class="srow"><span>Pitch display</span><button class="toggle" id="pitchBtn" onclick="toggleStrip()" title="Show your voice pitch while you speak">〰</button></div>
+    <div class="srow"><span>Microphone</span><button class="toggle" onclick="toggleSheet(false);micTest()">🎤 Test mic</button></div>
+    <div class="srow"><span>Learner / server</span><button class="toggle" id="cfgBtn" onclick="reconnect()" title="Switch learner / settings" style="display:none">⚙ Switch</button></div>
+    <div class="sheethint" id="hint"></div>
+    <div class="sheethint">Version <span id="ver"></span></div>
+  </aside>
 
   <div id="micBanner">
     <span id="micText">🎤 Allow the microphone so you can answer out loud.</span>
     <button id="micAllow" onclick="requestMic()">Allow microphone</button>
+    <button class="secondary" onclick="micTest()">🎤 Test mic</button>
   </div>
 
   <div id="phases"></div>
 
   <div id="log"></div>
 
+  <div class="composer">
+  <div id="pitchModeBar" style="display:none">〰 <b>Pitch mode</b> — the mic only draws your pitch, nothing is sent. <button id="pitchExit">🎤 Back to answering</button></div>
   <div id="pitchBox" class="pitchbox"><canvas id="pitchStrip"></canvas><div id="pitchCap" class="sub"></div></div>
   <div class="chips" id="chips"></div>
 
@@ -255,20 +390,24 @@
     <input type="file" id="photo" accept="image/*" capture="environment" onchange="sendPhoto(this)">
   </div>
 
-  <div class="row">
-    <button id="mic">🎤</button>
+  <div class="inputwrap">
+    <button class="icon" id="padBtn" onclick="togglePad()" style="display:none" title="Handwriting">✏️</button>
+    <textarea id="input" rows="1" placeholder="Type or speak…"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
+    <button id="sendBtn" class="sendbtn" onclick="send()" title="Send">➤</button>
+  </div>
+  <div class="microw">
     <select id="pause" class="pause" onchange="onPauseChange()" title="How long a pause sends your answer">
-      <option value="2000">⏱ 2s</option>
-      <option value="3000">⏱ 3s</option>
-      <option value="5000">⏱ 5s</option>
-      <option value="8000">⏱ 8s</option>
-      <option value="0">✋ Tap ⏹</option>
+      <option value="2000">⏱ 2s pause</option>
+      <option value="3000">⏱ 3s pause</option>
+      <option value="5000">⏱ 5s pause</option>
+      <option value="8000">⏱ 8s pause</option>
+      <option value="0">✋ Tap ⏹ to send</option>
       <option value="hold">🎙 Hold to talk</option>
     </select>
-    <button class="secondary" id="padBtn" onclick="togglePad()" style="display:none">✏️</button>
-    <textarea id="input" placeholder="Type or speak…"
-      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
-    <button id="sendBtn" onclick="send()">Send</button>
+    <button id="mic" title="Tap to talk">🎤</button>
+    <a href="#" class="mtlink" onclick="micTest();return false">Mic not working?</a>
+  </div>
   </div>
 
 <script>
@@ -535,7 +674,9 @@
                ['Reply to a message', '📱 Reply to a message'], ['Mini diary', '📓 Mini diary'],
                ['Character practice', '字 Character practice', 'script']],
     test:     [['', 'Level test']],
-    pinyin:   [['', 'Pinyin']]
+    pinyin:   [['', 'Pinyin']],
+    cards:    [['', 'Flashcards']],
+    today:    [['', 'Today']]
   };
 
   const CHIPS = {
@@ -548,6 +689,8 @@
     writing:  [['🎯 Topic', '__topic'], ['🙋 Ask', '__ask'], ['📝 New task', 'New task'], ['💡 Hint', 'Hint'], ['✅ Check', 'Check'],
                ['👀 Show me', 'Show me'], ['➡ Next', 'Next']],
     pinyin:   [],
+    cards:    [],
+    today:    [],
     test:     [['🔁 Again', 'Say it again'], ['🐢 Slower', 'Slower please'], ['⏭ Skip task', "I don't know — next task please"], ['🏁 Finish & score', '__finishtest']]
   };
 
@@ -557,15 +700,36 @@
     reading: 'Read the passage, then answer the questions. Bold = new words.',
     writing: 'Type your answer, or tap ✏️ to handwrite (great for Chinese characters).',
     pinyin: 'Tap 🔊 to hear, 🎤 to say it. Green = right, orange = tone, red = sound.',
+    today: 'One tap: word cards → guided lesson → tones. The plan adapts to you every day.',
+    cards: 'Import Anki decks and study with spaced repetition. Learned words feed into your lessons.',
     test: '8 short speaking tasks, no help during the test. Answer with 🎤 if you can — it is scored out of 100 at the end.'
   };
+
+  function toggleSheet(open) {
+    document.body.classList.toggle('sheet', open === undefined ? !document.body.classList.contains('sheet') : !!open);
+  }
+  function buildTabs() {
+    const nav = document.getElementById('tabs');
+    if (!nav) return;
+    nav.innerHTML = '';
+    [...document.getElementById('skill').options].forEach(o => {
+      if (o.hidden || o.disabled) return;
+      const b = document.createElement('button');
+      b.className = 'tab' + (o.value === skill ? ' on' : '');
+      b.textContent = o.textContent;
+      b.onclick = () => { if (o.value === skill) return; document.getElementById('skill').value = o.value; onSkillChange(); buildTabs(); };
+      nav.appendChild(b);
+    });
+    const on = nav.querySelector('.tab.on'); if (on && on.scrollIntoView) try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+  }
 
   function buildSkillUI() {
     const l = lang();
     const pyOpt = document.querySelector('#skill option[value="pinyin"]');
     if (pyOpt) pyOpt.hidden = pyOpt.disabled = l !== 'zh';
     if (skill === 'pinyin' && l !== 'zh') { skill = 'guided'; document.getElementById('skill').value = 'guided'; }
-    document.body.classList.toggle('pinyin', skill === 'pinyin');
+    document.body.classList.toggle('pinyin', skill === 'pinyin' || skill === 'cards' || skill === 'today');
+    if (typeof showTodayBar === 'function' && today) showTodayBar();
     showStrip();
     if (l === 'zh') loadPinyinLib().catch(() => {});
     document.body.classList.toggle('reading', skill === 'reading');
@@ -592,8 +756,9 @@
 
     document.getElementById('padBtn').style.display = (skill === 'writing' || skill === 'guided') ? '' : 'none';
     if (skill !== 'writing' && skill !== 'guided') document.getElementById('pad').classList.remove('open');
-    act.style.display = (skill === 'guided' || skill === 'test' || skill === 'pinyin') ? 'none' : '';
+    act.style.display = (skill === 'guided' || skill === 'test' || skill === 'pinyin' || skill === 'cards' || skill === 'today') ? 'none' : '';
     renderPhases();
+    buildTabs();
     if (!state[l].view.length) render(); // refresh the welcome card
   }
 
@@ -1405,9 +1570,11 @@
     const box = document.getElementById('pitchBox');
     if (!box) return;
     box.style.display = stripOn && skill !== 'pinyin' ? '' : 'none';
+    const pm = document.getElementById('pitchModeBar');
+    if (pm) { pm.style.display = IS_PHONE && stripOn && skill !== 'pinyin' ? '' : 'none'; document.getElementById('pitchExit').onclick = toggleStrip; }
     const cap = document.getElementById('pitchCap');
     if (cap && IS_PHONE && stripOn && !pitch.last) cap.textContent = '〰 Pitch mode — tap 🎤 and shadow the tutor\'s sentence. Tap 〰 to answer normally.';
-    const b = document.getElementById('pitchBtn'); if (b) b.classList.toggle('on', stripOn);
+    const b = document.getElementById('pitchBtn'); if (b) { b.classList.toggle('on', stripOn); b.textContent = IS_PHONE ? (stripOn ? '〰 Pitch mode on' : '〰 Pitch mode off') : (stripOn ? '〰 On' : '〰 Off'); }
     drawStrip();
   }
   function stripCaption() {
@@ -1603,6 +1770,7 @@
         '<div class="pybtns"><button class="go" id="pyMore">▶ Keep going</button><button class="secondary" id="pyCheck">🧪 Check</button></div>' +
         '<details><summary>📊 My sounds</summary>' + statsHtml(st) + '</details>';
       div.querySelector('#pyMore').onclick = () => pyStart(false);
+      if (today.run) { const b = div.querySelector('#pyMore'); b.textContent = 'Next step ▶'; b.onclick = todayNext; }
       div.querySelector('#pyCheck').onclick = () => pyStart(true);
       return div;
     }
@@ -1621,6 +1789,409 @@
     div.querySelector('#pyGo').onclick = () => pyStart(false);
     div.querySelector('#pyCheck').onclick = () => pyStart(true);
     if (!st) pyLoadStats();
+    return div;
+  }
+
+
+  // ---------- 🃏 Flashcards + Anki deck import ----------
+  // An Anki .apkg is a zip with a SQLite database inside. It is opened right here in the browser
+  // (JSZip + sql.js, plus fzstd for the newest Anki format); only the word / reading / meaning text is sent to your sheet.
+  var fc = { screen: 'start', data: null, queue: [], idx: 0, shown: false, results: [], dir: 'recognize', imp: null, busy: false, again: new Set() };
+  try { fc.dir = localStorage.getItem('fcDir') || 'recognize'; } catch (e) {}
+  const FC_SEARCH = { zh: 'HSK', 'zh-tw': 'TOCFL', es: 'Spanish frequency', 'es-es': 'Spanish frequency', 'es-mx': 'Mexican Spanish', de: 'German 4000',
+    fr: 'French frequency', it: 'Italian frequency', ja: 'JLPT N5', ko: 'TOPIK', ru: 'Russian frequency', 'pt-br': 'Brazilian Portuguese', ar: 'Arabic frequency',
+    hi: 'Hindi', en: 'English vocabulary' };
+
+  function loadScript(src) {
+    return new Promise((ok, bad) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => bad(new Error('Could not load ' + src.split('/').pop() + ' — check your connection.')); document.head.appendChild(sc); });
+  }
+  function loadAnkiLibs() {
+    if (loadAnkiLibs.p) return loadAnkiLibs.p;
+    loadAnkiLibs.p = Promise.all([
+      window.JSZip ? 0 : loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'),
+      window.initSqlJs ? 0 : loadScript('https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/sql-wasm.js'),
+      window.fzstd ? 0 : loadScript('https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js')
+    ]).catch(e => { loadAnkiLibs.p = null; throw e; });
+    return loadAnkiLibs.p;
+  }
+
+  function cleanField(h) {
+    const d = document.createElement('div');
+    d.innerHTML = String(h || '').replace(/\[sound:[^\]]*\]/g, ' ').replace(/<br\s*\/?>|<\/div>|<\/p>|<\/li>/gi, ' ; ').replace(/<(style|script)[\s\S]*?<\/\1>/gi, '');
+    return (d.textContent || '').replace(/\s*;\s*(;\s*)*/g, '; ').replace(/^[;\s]+|[;\s]+$/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  // → { types: [{name, fields:[names], notes:[[f1,f2,…]]}] } sorted by size
+  async function readApkg(file) {
+    await loadAnkiLibs();
+    const zip = await JSZip.loadAsync(file);
+    const name = ['collection.anki21b', 'collection.anki21', 'collection.anki2'].find(n => zip.file(n));
+    if (!name) throw new Error('This is not an Anki deck (.apkg). Download a deck from AnkiWeb and choose that file.');
+    let bytes = await zip.file(name).async('uint8array');
+    if (/b$/.test(name)) bytes = fzstd.decompress(bytes);
+    const SQL = await initSqlJs({ locateFile: f => 'https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/' + f });
+    const db = new SQL.Database(bytes);
+    const q = sql => { try { const r = db.exec(sql); return r.length ? r[0].values : []; } catch (e) { return []; } };
+    const names = {}, tnames = {};
+    const models = q('select models from col');
+    if (models.length && models[0][0] && models[0][0] !== '{}') {
+      try { const m = JSON.parse(models[0][0]); Object.keys(m).forEach(id => { tnames[id] = m[id].name; names[id] = (m[id].flds || []).sort((a, b) => a.ord - b.ord).map(f => f.name); }); } catch (e) {}
+    } else {
+      q('select ntid, ord, name from fields order by ntid, ord').forEach(r => { (names[r[0]] = names[r[0]] || [])[r[1]] = r[2]; });
+      q('select id, name from notetypes').forEach(r => { tnames[r[0]] = r[1]; });
+    }
+    const by = {};
+    q('select mid, flds from notes order by id').forEach(r => {
+      const t = by[r[0]] = by[r[0]] || { name: tnames[r[0]] || 'Cards', fields: names[r[0]] || [], notes: [] };
+      t.notes.push(String(r[1]).split('\x1f').map(cleanField));
+    });
+    db.close();
+    const types = Object.keys(by).map(k => by[k]).sort((a, b) => b.notes.length - a.notes.length);
+    types.forEach(t => { const n = Math.max.apply(null, t.notes.map(x => x.length)); for (let i = 0; i < n; i++) if (!t.fields[i]) t.fields[i] = 'Field ' + (i + 1); });
+    if (!types.length || types[0].notes.length === 1 && /update|newer version/i.test(types[0].notes[0].join(' ')))
+      throw new Error('This deck uses a newer Anki format the file didn\'t include. In Anki, export it again with “Support older Anki versions” ticked, or try another deck.');
+    return { types: types };
+  }
+
+  // Guess which columns are the word, its reading and its meaning.
+  function guessColumns(t, l) {
+    const n = t.fields.length, sample = t.notes.slice(0, 40);
+    const share = re => [...Array(n).keys()].map(i => sample.filter(x => re.test(x[i] || '')).length / Math.max(1, sample.length));
+    const byName = re => t.fields.findIndex(f => re.test(f));
+    const scriptRe = { zh: /[一-鿿]/, 'zh-tw': /[一-鿿]/, ja: /[぀-ヿ一-鿿]/, ko: /[가-힯]/, ar: /[؀-ۿ]/, ur: /[؀-ۿ]/,
+      hi: /[ऀ-ॿ]/, mr: /[ऀ-ॿ]/, te: /[ఀ-౿]/, ta: /[஀-௿]/, kn: /[ಀ-೿]/, ml: /[ഀ-ൿ]/, bn: /[ঀ-৿]/, gu: /[઀-૿]/, ru: /[Ѐ-ӿ]/ }[l];
+    let w = -1, r = -1, m = -1;
+    if (scriptRe) { const s = share(scriptRe); const best = s.indexOf(Math.max.apply(null, s)); if (s[best] > 0.5) w = best; }
+    if (w < 0) w = byName(/simplified|hanzi|word|vocab|expression|front|target|term|spanish|german|french|italian|español|deutsch|^(es|de|fr)$/i);
+    if (w < 0) w = 0;
+    const tone = share(/[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/);
+    r = byName(/pinyin|reading|pronunciation|romaji|kana|romanization|ipa/i);
+    if (r < 0 && /^zh/.test(l)) { const b = tone.indexOf(Math.max.apply(null, tone)); if (tone[b] > 0.5 && b !== w) r = b; }
+    m = byName(/meaning|english|definition|translation|gloss|back|significado|bedeutung/i);
+    if (m < 0 || m === w) m = [...Array(n).keys()].find(i => i !== w && i !== r && sample.some(x => (x[i] || '').length)) ?? -1;
+    if (r === w || r === m) r = -1;
+    return { w: w, r: r, m: m };
+  }
+
+  function fcLoad() {
+    const l = lang();
+    fc.screen = 'start'; fc.loading = true; renderCards();
+    call('getFlashcards', l).then(d => { fc.data = d; fc.loading = false; renderCards(); }).catch(err => { fc.loading = false; fc.error = err.message; renderCards(); });
+  }
+  function renderCards() { if (skill === 'cards' && !loginShown && !setupShown) render(); }
+
+  function fcSay(text) {
+    if (!('speechSynthesis' in window) || !text) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = speechOf(lang());
+    const v = pickVoice(lang()); if (v) u.voice = v;
+    u.rate = lang() === 'zh' ? 0.75 : 0.85;
+    setTimeout(() => speechSynthesis.speak(u), 60);
+  }
+
+  // One-shot listening for the "say it" side: stops ~1.3 s after you finish.
+  function fcListen(cb) {
+    if (!SR) { alert('Speaking answers need speech recognition — use Chrome.'); return; }
+    if (fc.rec) { try { fc.rec.stop(); } catch (e) {} return; }
+    speechSynthesis.cancel();
+    const r = new SR(); fc.rec = r;
+    r.lang = speechOf(lang()); r.interimResults = true; r.continuous = true; r.maxAlternatives = 3;
+    let fin = [], interim = '', t = null;
+    const stopSoon = ms => { clearTimeout(t); t = setTimeout(() => { try { r.stop(); } catch (e) {} }, ms); };
+    r.onaudiostart = () => { fc.listening = true; renderCards(); stopSoon(6000); };
+    r.onresult = e => { interim = ''; for (let k = e.resultIndex; k < e.results.length; k++) { const x = e.results[k]; if (x.isFinal) { for (let a = 0; a < x.length; a++) fin.push(x[a].transcript); } else interim += x[0].transcript; } stopSoon(1300); };
+    r.onerror = e => { if (e.error === 'not-allowed') fc.micError = 'Microphone blocked — allow it for this site.'; };
+    r.onend = () => { clearTimeout(t); fc.rec = null; fc.listening = false; const alts = fin.length ? fin : interim ? [interim] : []; if (!alts.length && !fc.micError) fc.micError = 'Didn\'t catch that — tap 🎤 and say it again.'; cb(alts); };
+    try { r.start(); } catch (e) { fc.rec = null; }
+  }
+
+  function fcCheck(alts, card) {
+    const norm = x => String(x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+    const targets = card.w.split(/[;,/、，]| or /).map(norm).filter(Boolean);
+    let best = 0, heard = alts[0] || '';
+    alts.forEach(a => {
+      const h = norm(a);
+      targets.forEach(tg => {
+        if (!h || !tg) return;
+        if (h === tg || h.includes(tg)) { best = 1; heard = a; return; }
+        const L = [], n = tg.length, m = h.length; // similarity by longest common subsequence
+        for (let i = 0; i <= n; i++) { L[i] = []; for (let j = 0; j <= m; j++) L[i][j] = !i || !j ? 0 : tg[i - 1] === h[j - 1] ? L[i - 1][j - 1] + 1 : Math.max(L[i - 1][j], L[i][j - 1]); }
+        const sc = L[n][m] / Math.max(n, m); if (sc > best) { best = sc; heard = a; }
+      });
+    });
+    return { score: best, heard: heard };
+  }
+
+  // Next-interval hints for the four buttons (same rule as the server).
+  function fcNext(card, q) {
+    let reps = card.kind === 'new' ? 0 : card.reps, ivl = card.ivl || 1;
+    if (q < 3) return '1d';
+    reps += 1;
+    const d = reps === 1 ? 1 : reps === 2 ? 3 : Math.round(ivl * (card.ease || 2.5));
+    return d >= 30 ? Math.round(d / 30) + 'mo' : d + 'd';
+  }
+
+  function fcStart() {
+    const cards = (fc.data && fc.data.cards || []).slice();
+    // reviews first, then new ones mixed in
+    fc.queue = cards; fc.idx = 0; fc.shown = false; fc.results = []; fc.saved = 0; fc.again = new Set(); fc.check = null; fc.micError = '';
+    fc.screen = 'study'; renderCards();
+    const c = fc.queue[0]; if (c && fc.dir === 'recognize') fcSay(c.w);
+  }
+
+  function fcGrade(q) {
+    const c = fc.queue[fc.idx];
+    if (!fc.again.has(c.w + '|' + c.kind)) fc.results.push({ w: c.w, r: c.r, m: c.m, kind: c.kind, q: q }); // the first answer is what counts
+    if (q < 3 && !fc.again.has(c.w + '|' + c.kind)) { fc.again.add(c.w + '|' + c.kind); fc.queue.push(c); } // see it again at the end
+    fc.idx++; fc.shown = false; fc.check = null; fc.micError = '';
+    if (fc.results.length - fc.saved >= 10) fcSave();
+    if (fc.idx >= fc.queue.length) { fcSave(true); return; }
+    renderCards();
+    const n = fc.queue[fc.idx]; if (n && fc.dir === 'recognize') fcSay(n.w);
+  }
+
+  function fcSave(finish) {
+    const batch = fc.results.slice(fc.saved);
+    fc.saved = fc.results.length;
+    const l = lang();
+    const p = batch.length ? call('saveFlashcards', l, batch) : Promise.resolve();
+    fc.pending = Promise.resolve(fc.pending).then(() => p).catch(err => toast('⚠ Flashcards not saved: ' + err.message, true));
+    if (finish) {
+      fc.screen = 'done'; renderCards();
+      const n = fc.results.length, good = fc.results.filter(x => x.q >= 3).length;
+      toast(n ? '🎉 ' + n + ' cards done — ' + Math.round(100 * good / n) + '% remembered!' : 'Done!', true);
+      fc.pending.then(() => { loadSummary(l); call('getFlashcards', l).then(d => { fc.data = d; renderCards(); }).catch(() => {}); });
+    }
+  }
+
+  function fcImportFile(file) {
+    if (!file) return;
+    fc.imp = { file: file.name, status: 'Opening the deck…' }; fc.screen = 'import'; renderCards();
+    readApkg(file).then(d => {
+      const t = d.types[0];
+      fc.imp = { file: file.name, types: d.types, t: 0, cols: guessColumns(t, lang()), deck: file.name.replace(/\.(apkg|colpkg)$/i, '').replace(/[_-]+/g, ' ').slice(0, 60), limit: 'all' };
+      renderCards();
+    }).catch(err => { fc.imp = { file: file.name, error: err.message }; renderCards(); });
+  }
+
+  async function fcDoImport() {
+    const im = fc.imp, t = im.types[im.t], c = im.cols, l = lang();
+    let notes = t.notes.map(x => ({ w: x[c.w] || '', r: c.r >= 0 ? x[c.r] || '' : '', m: c.m >= 0 ? x[c.m] || '' : '' })).filter(x => x.w);
+    if (im.limit !== 'all') notes = notes.slice(0, Number(im.limit));
+    let added = 0, skipped = 0;
+    im.status = 'Importing 0 / ' + notes.length + '…'; im.running = true; renderCards();
+    try {
+      for (let i = 0; i < notes.length; i += 400) {
+        const r = await call('importDeck', l, im.deck, notes.slice(i, i + 400));
+        added += r.added; skipped += r.skipped;
+        im.status = 'Importing ' + Math.min(notes.length, i + 400) + ' / ' + notes.length + '…'; renderCards();
+      }
+      toast('📥 Imported ' + added + ' cards' + (skipped ? ' (' + skipped + ' duplicates skipped)' : '') + ' into “' + im.deck + '”', true);
+      fc.imp = null; fcLoad();
+    } catch (err) { im.running = false; im.status = ''; im.error = err.message; renderCards(); }
+  }
+
+  function cardsCard() {
+    const div = document.createElement('div');
+    div.className = 'welcome fccard';
+    const l = lang(), L = langInfo(l), d = fc.data;
+    const q = s => div.querySelector(s);
+    if (fc.screen === 'import' && fc.imp) {
+      const im = fc.imp;
+      if (im.error && !im.types) {
+        div.innerHTML = '<h3>📥 Import Anki deck</h3><div class="loginerr">' + escapeHtml(im.error) + '</div><div class="pybtns"><button class="secondary" id="fcBack">← Back</button></div>';
+        q('#fcBack').onclick = () => { fc.imp = null; fc.screen = 'start'; renderCards(); };
+        return div;
+      }
+      if (!im.types) { div.innerHTML = '<h3>📥 Import Anki deck</h3><div class="sub">' + escapeHtml(im.status || '') + '</div>'; return div; }
+      const t = im.types[im.t], c = im.cols;
+      const opt = (sel, none) => (none ? '<option value="-1"' + (sel < 0 ? ' selected' : '') + '>— none —</option>' : '') +
+        t.fields.map((f, i) => '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + escapeHtml(f) + '</option>').join('');
+      const prev = t.notes.slice(0, 4).map(x => '<tr><td><b>' + escapeHtml(x[c.w] || '') + '</b></td><td>' + escapeHtml(c.r >= 0 ? x[c.r] || '' : '') + '</td><td>' + escapeHtml(c.m >= 0 ? x[c.m] || '' : '') + '</td></tr>').join('');
+      div.innerHTML = '<h3>📥 Import into ' + escapeHtml(L.name) + '</h3>' +
+        '<div class="sub">' + escapeHtml(im.file) + ' · ' + t.notes.length + ' cards' + (im.types.length > 1 ? ' · card type: <select id="fcType">' + im.types.map((x, i) => '<option value="' + i + '"' + (i === im.t ? ' selected' : '') + '>' + escapeHtml(x.name) + ' (' + x.notes.length + ')</option>').join('') + '</select>' : '') + '</div>' +
+        '<label class="lbl">Deck name</label><input id="fcDeck" class="txt" maxlength="60">' +
+        '<div class="fcmap"><label>Word (in ' + escapeHtml(L.name) + ')<select id="fcW">' + opt(c.w) + '</select></label>' +
+        '<label>Reading / pronunciation<select id="fcR">' + opt(c.r, true) + '</select></label>' +
+        '<label>Meaning<select id="fcM">' + opt(c.m, true) + '</select></label></div>' +
+        '<div class="sub">Preview — check the columns look right:</div><table class="fcprev"><tr><th>Word</th><th>Reading</th><th>Meaning</th></tr>' + prev + '</table>' +
+        '<label class="lbl">How many</label><select id="fcLim" class="txt">' + [['all', 'All ' + t.notes.length], ['100', 'First 100'], ['500', 'First 500'], ['1000', 'First 1,000'], ['2000', 'First 2,000']]
+          .filter(o => o[0] === 'all' || Number(o[0]) < t.notes.length).map(o => '<option value="' + o[0] + '"' + (o[0] === String(im.limit) ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>' +
+        '<div class="sub">Cards wait in the deck and you get a few new ones each day (set below on the main screen). Audio and images in the deck are not imported — the tutor voice reads the words.</div>' +
+        (im.error ? '<div class="loginerr">' + escapeHtml(im.error) + '</div>' : '') +
+        '<div class="pybtns"><button class="go" id="fcGo"' + (im.running ? ' disabled' : '') + '>' + (im.running ? escapeHtml(im.status) : '📥 Import') + '</button><button class="secondary" id="fcBack">Cancel</button></div>';
+      q('#fcDeck').value = im.deck;
+      q('#fcDeck').oninput = e => { im.deck = e.target.value; };
+      const re = () => { renderCards(); };
+      q('#fcW').onchange = e => { c.w = Number(e.target.value); re(); };
+      q('#fcR').onchange = e => { c.r = Number(e.target.value); re(); };
+      q('#fcM').onchange = e => { c.m = Number(e.target.value); re(); };
+      q('#fcLim').onchange = e => { im.limit = e.target.value; };
+      if (q('#fcType')) q('#fcType').onchange = e => { im.t = Number(e.target.value); im.cols = guessColumns(im.types[im.t], l); re(); };
+      q('#fcGo').onclick = () => { if (!im.deck.trim()) { alert('Give the deck a name.'); return; } fcDoImport(); };
+      q('#fcBack').onclick = () => { fc.imp = null; fc.screen = 'start'; renderCards(); };
+      return div;
+    }
+    if (fc.screen === 'study' && fc.queue[fc.idx]) {
+      const c = fc.queue[fc.idx], produce = fc.dir === 'produce', n = fc.queue.length;
+      const front = produce
+        ? '<div class="fcmean">' + escapeHtml(c.m || '(no meaning)') + '</div><div class="sub" style="text-align:center">Say it in ' + escapeHtml(L.name) + '</div>'
+        : '<div class="fcword">' + escapeHtml(c.w) + '</div>';
+      const back = '<div class="fcback">' + (produce ? '<div class="fcword">' + escapeHtml(c.w) + '</div>' : '') +
+        (c.r ? '<div class="fcread">' + escapeHtml(c.r) + '</div>' : '') + (!produce ? '<div class="fcmean">' + escapeHtml(c.m) + '</div>' : '') + '</div>';
+      const chk = fc.check;
+      div.innerHTML = '<div class="pyhead"><b>🃏 ' + (c.kind === 'new' ? '<span class="fcnew">NEW</span> ' + escapeHtml(c.deck || '') : 'Review') + '</b><span class="sub">' + Math.min(fc.idx + 1, n) + ' / ' + n + '</span></div>' +
+        '<div class="bar100"><div style="width:' + Math.round(100 * fc.idx / n) + '%"></div></div>' +
+        front + (fc.shown ? back : '') +
+        (chk ? '<div class="pyverdict ' + (chk.score >= 0.85 ? 'good' : '') + '">' + (chk.score >= 0.85 ? '✅ Correct!' : chk.score >= 0.6 ? '🟡 Close' : '❌ Not quite') + '</div><div class="sub" style="text-align:center">I heard: ' + escapeHtml(chk.heard || '—') + '</div>' : '') +
+        (fc.micError ? '<div class="loginerr">' + escapeHtml(fc.micError) + '</div>' : '') +
+        '<div class="pybtns">' + (fc.shown
+          ? [[0, 'Again', 'again'], [3, 'Hard', 'hard'], [4, 'Good', 'good'], [5, 'Easy', 'easy']].map(b => '<button class="grade ' + b[2] + '" data-q="' + b[0] + '">' + b[1] + '<small>' + fcNext(c, b[0]) + '</small></button>').join('')
+          : '<button class="go" id="fcShow">Show answer</button>' +
+            '<button class="secondary" id="fcMic">' + (fc.listening ? '🔴 Listening…' : '🎤 Say it') + '</button>' +
+            '<button class="secondary" id="fcHear">🔊</button>') + '</div>' +
+        '<div class="sub" style="text-align:center;margin-top:8px">' + (fc.shown ? 'How well did you remember it?' : produce ? 'Say the word, or tap Show answer.' : 'Say the word aloud and recall its meaning, then tap Show answer.') + '</div>';
+      if (fc.shown) div.querySelectorAll('.grade').forEach(b => b.onclick = () => fcGrade(Number(b.dataset.q)));
+      else {
+        q('#fcShow').onclick = () => { fc.shown = true; renderCards(); fcSay(c.w); };
+        q('#fcHear').onclick = () => fcSay(produce && !fc.shown ? '' : c.w);
+        if (produce) q('#fcHear').style.display = 'none';
+        q('#fcMic').onclick = () => fcListen(alts => { if (alts.length) { fc.check = fcCheck(alts, c); fc.micError = ''; if (fc.check.score >= 0.85) { fc.shown = true; fcSay(c.w); } } renderCards(); });
+      }
+      return div;
+    }
+    if (fc.screen === 'done') {
+      const n = fc.results.length, good = fc.results.filter(x => x.q >= 3).length, nw = fc.results.filter(x => x.kind === 'new').length;
+      div.innerHTML = '<h3>🎉 Session done</h3><div class="cheer">' + n + ' cards · ' + (n ? Math.round(100 * good / n) : 0) + '% remembered · ' + nw + ' new words learned. ' +
+        'They\'re now in your vocabulary, so the tutor will bring them back in your lessons too.</div>' +
+        '<div class="pybtns"><button class="go" id="fcHome">🃏 Back to flashcards</button></div>';
+      q('#fcHome').onclick = fcLoad;
+      if (today.run) { const b = q('#fcHome'); b.textContent = 'Next step ▶'; b.onclick = todayNext; }
+      return div;
+    }
+    // start screen
+    if (!d) { div.innerHTML = '<h3>🃏 Flashcards</h3><div class="sub">' + (fc.error ? '<span class="loginerr">' + escapeHtml(fc.error) + '</span>' : 'Loading…') + '</div>'; if (!fc.loading && !fc.error) fcLoad(); return div; }
+    const total = d.cards.length, newLeft = d.decks.reduce((a, x) => a + x.left, 0);
+    div.innerHTML = '<h3>🃏 Flashcards · ' + escapeHtml(L.flag + ' ' + L.name) + '</h3>' +
+      '<div class="fcstats"><div><b>' + d.due + '</b><small>due reviews</small></div><div><b>' + Math.max(0, total - d.due) + '</b><small>new today</small></div><div><b>' + newLeft + '</b><small>new waiting</small></div></div>' +
+      '<div class="seg"><button data-d="recognize" class="' + (fc.dir === 'recognize' ? 'on' : '') + '">👀 See word → recall meaning</button><button data-d="produce" class="' + (fc.dir === 'produce' ? 'on' : '') + '">🗣 See meaning → say the word</button></div>' +
+      '<button class="go" id="fcGo"' + (total ? '' : ' disabled') + '>' + (total ? '▶ Study ' + total + ' cards' : '✅ All done for today') + '</button>' +
+      (!total ? '<div class="sub" style="margin-top:6px">' + (newLeft ? 'Come back tomorrow, or raise the new cards per day below.' : d.decks.length ? 'All caught up! 🎉 Import another deck for more words.' : 'Import a deck to get started.') + '</div>' : '') +
+      '<h4>Your decks</h4>' + (d.decks.length ? d.decks.map(x => '<div class="trow"><span>📚 ' + escapeHtml(x.name) + '</span><span><b>' + (x.total - x.left) + '</b> / ' + x.total + ' learned <button class="fcdel" data-deck="' + escapeHtml(x.name) + '" title="Remove deck">🗑</button></span></div>').join('')
+        : '<div class="sub">No decks yet. Words the tutor teaches you appear here as reviews too.</div>') +
+      '<label class="lbl">New cards per day</label><select id="fcPer" class="txt">' + [0, 5, 10, 15, 20, 30, 50].map(v => '<option' + (v === d.perDay ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>' +
+      '<div class="pybtns"><button class="secondary" id="fcImp">📥 Import Anki deck (.apkg)</button></div>' +
+      '<input type="file" id="fcFile" accept=".apkg,.colpkg" style="display:none">' +
+      '<div class="sub" style="margin-top:8px">Get free shared decks: <a href="https://ankiweb.net/shared/decks?search=' + encodeURIComponent(FC_SEARCH[l] || L.name) + '" target="_blank" rel="noopener">AnkiWeb: “' + escapeHtml(FC_SEARCH[l] || L.name) + '” ↗</a> — open a deck, tap Download, then import the file here.</div>';
+    div.querySelectorAll('.seg button').forEach(b => b.onclick = () => { fc.dir = b.dataset.d; try { localStorage.setItem('fcDir', fc.dir); } catch (e) {} renderCards(); });
+    q('#fcGo').onclick = fcStart;
+    q('#fcPer').onchange = e => call('setFlashcardLimit', l, Number(e.target.value)).then(x => { fc.data = x; renderCards(); }).catch(showApiError);
+    q('#fcImp').onclick = () => q('#fcFile').click();
+    q('#fcFile').onchange = e => fcImportFile(e.target.files[0]);
+    div.querySelectorAll('.fcdel').forEach(b => b.onclick = () => {
+      if (!confirm('Remove the deck “' + b.dataset.deck + '”? Words you already studied stay in your vocabulary.')) return;
+      call('deleteDeck', l, b.dataset.deck).then(x => { fc.data = x; renderCards(); }).catch(showApiError);
+    });
+    return div;
+  }
+
+
+  // ---------- 🏠 Today: one click runs the day's plan (word cards → guided lesson → tones) ----------
+  var today = { run: false, data: null, lang: null, i: 0, loading: false };
+  function setSkillDirect(v) {
+    skill = v;
+    document.getElementById('skill').value = v;
+    call('saveSkill', v).catch(() => {});
+    buildSkillUI(); renderPhases(); render();
+  }
+  function loadToday(then) {
+    const l = lang();
+    today.loading = true; today.lang = l;
+    if (skill === 'today') render();
+    return call('getDailyPlan', l, levels[l]).then(d => {
+      today.data = d; today.loading = false;
+      if (d.seeded && d.seeded.added) toast('⭐ Your starter word deck is ready: ' + d.seeded.added + ' useful words', true);
+      if (then) then(d); else if (skill === 'today') render();
+      showTodayBar();
+    }).catch(err => { today.loading = false; today.error = err.message; if (skill === 'today') render(); });
+  }
+  function todayStart() {
+    today.run = true;
+    const d = today.data;
+    const i = d.steps.findIndex(s => !s.done);
+    if (i < 0) { today.run = false; render(); return; }
+    goStep(i);
+  }
+  function goStep(i) {
+    const d = today.data, st = d && d.steps[i];
+    if (!st) { todayFinish(); return; }
+    today.i = i;
+    if (st.id === 'cards') {
+      setSkillDirect('cards');
+      fc.lang = lang(); fc.screen = 'start'; fc.data = null; fc.loading = true; render();
+      call('getFlashcards', lang(), true).then(x => { fc.data = x; fc.loading = false; if (x.cards.length) fcStart(); else { st.done = true; goStep(i + 1); } })
+        .catch(err => { fc.loading = false; fc.error = err.message; render(); });
+    } else if (st.id === 'lesson') {
+      setSkillDirect('guided');
+      const l = lang(), s = state[l];
+      if (!s.messages.length) {
+        const p = plan[l];
+        if (p && p.custom && p.custom.active) startCustom(p.custom.active); else startSession();
+      }
+    } else if (st.id === 'pinyin') { setSkillDirect('pinyin'); pyStart(false); }
+    else if (st.id === 'test') { startTest(); }
+    showTodayBar();
+  }
+  function todayNext() {
+    const d = today.data; if (!d) return;
+    d.steps[today.i].done = true;
+    const n = d.steps.findIndex((s, k) => k > today.i && !s.done);
+    if (n < 0) todayFinish(); else goStep(n);
+  }
+  function todayFinish() {
+    today.run = false;
+    setSkillDirect('today');
+    toast('🎉 Today\'s plan complete — see you tomorrow!', true);
+    loadToday();
+  }
+  // Slim bar above the lesson while the plan runs: "Today · step 2 of 3 · Next ▶"
+  function showTodayBar() {
+    let b = document.getElementById('todayBar');
+    if (!b) { b = document.createElement('div'); b.id = 'todayBar'; document.getElementById('phases').before(b); }
+    const d = today.data;
+    if (!today.run || !d || skill === 'today' || today.lang !== lang()) { b.style.display = 'none'; return; }
+    const st = d.steps[today.i], last = d.steps.findIndex((s, k) => k > today.i && !s.done) < 0;
+    b.style.display = '';
+    b.innerHTML = '<span>🏠 Today · step ' + (today.i + 1) + ' of ' + d.steps.length + ': <b>' + escapeHtml(st.icon + ' ' + st.title) + '</b></span>' +
+      '<span><button class="pill" id="tbHome">🏠</button><button class="pill primary" id="tbNext">' + (last ? 'Finish ✓' : 'Next step ▶') + '</button></span>';
+    b.querySelector('#tbNext').onclick = todayNext;
+    b.querySelector('#tbHome').onclick = () => { today.run = false; setSkillDirect('today'); loadToday(); };
+  }
+  function todayCard() {
+    const div = document.createElement('div');
+    div.className = 'welcome todaycard';
+    const l = lang(), L = langInfo(l);
+    if (today.lang !== l) { today.data = null; today.lang = l; }
+    const d = today.data;
+    if (!d) {
+      div.innerHTML = '<h3>🏠 Today · ' + escapeHtml(L.flag + ' ' + L.name) + '</h3><div class="sub">' + (today.error ? '<span class="loginerr">' + escapeHtml(today.error) + '</span>'
+        : 'Preparing your plan… (the first time for a language, your starter word deck is made — about 15 seconds)') + '</div>';
+      if (!today.loading && !today.error) loadToday();
+      return div;
+    }
+    const left = d.steps.filter(s => !s.done), all = !left.length;
+    div.innerHTML = '<h3>🏠 Today · ' + escapeHtml(L.flag + ' ' + L.name) + '</h3>' +
+      '<div class="sub">' + (d.streak ? '🔥 ' + d.streak + '-day streak · ' : '') + (all ? 'Everything done today 🎉' : 'about ' + d.minutes + ' minutes · AI cost ' + d.estCost) + (d.goal ? ' · 🎯 ' + escapeHtml(d.goal.name) + ' ' + d.goal.percent + '%' : '') + '</div>' +
+      '<div class="steps">' + d.steps.map((s, k) => '<div class="step' + (s.done ? ' done' : '') + '"><span class="dot">' + (s.done ? '✓' : k + 1) + '</span><div><b>' + s.icon + ' ' + escapeHtml(s.title) +
+        '</b> <span class="sub">· ' + s.minutes + ' min' + (s.free ? ' · free' : '') + '</span><div class="sub">' + escapeHtml(s.detail) + '</div></div></div>').join('') + '</div>' +
+      '<button class="go" id="tdGo">' + (all ? '➕ Practise more' : d.steps.some(s => s.done) ? '▶ Continue today\'s lesson' : '▶ Start today\'s lesson') + '</button>' +
+      '<div class="sub" style="margin-top:10px">One tap runs the plan in order. Word cards are free; the guided lesson uses the AI tutor. ' +
+      'Your words come from a ⭐ starter deck made for ' + escapeHtml(L.name) + ' (or your own Anki decks in 🃏 Flashcards), and the tutor reuses them in your lessons.</div>';
+    div.querySelector('#tdGo').onclick = () => {
+      if (all) { setSkillDirect('guided'); return; }
+      todayStart();
+    };
     return div;
   }
 
@@ -2071,7 +2642,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-29-phone';
+  const APP_VERSION = '2026-10-30-today';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
@@ -2117,6 +2688,14 @@
   }
 
   document.getElementById('ver').textContent = 'v' + APP_VERSION;
+  (function () { // the text box grows with what you type (up to 5 lines)
+    const box = document.getElementById('input');
+    const fit = () => { box.style.height = '40px'; box.style.height = Math.min(120, box.scrollHeight) + 'px'; };
+    box.addEventListener('input', fit);
+    new MutationObserver(fit).observe(box, { attributes: true, attributeFilter: ['value'] });
+    box.addEventListener('focus', fit);
+    window.fitInput = fit;
+  })();
   buildSkillUI();
   if (!IN_GOOGLE) document.getElementById('cfgBtn').style.display = '';
   document.getElementById('pause').value = pauseSetting();
@@ -2129,6 +2708,7 @@
   function onLangChange() {
     if (lang() === '__setup') { document.getElementById('lang').value = lastLang; showLanguageSetup(myLangs.length > 0); return; }
     lastLang = lang();
+    if (today.run && today.lang !== lang()) today.run = false;
     rememberLang(); syncLevel(); buildSkillUI(); matchSessionSkill(); renderPhases(); render(); if (!plan[lang()]) loadPlan(); }
 
   function onLevelChange() {
@@ -2175,6 +2755,8 @@
     const log = document.getElementById('log');
     log.innerHTML = '';
     if (skill === 'pinyin' && lang() === 'zh') { log.appendChild(pinyinCard()); return; }
+    if (skill === 'today') { log.appendChild(todayCard()); return; }
+    if (skill === 'cards') { if (fc.lang !== lang()) { fc.lang = lang(); fc.data = null; fc.screen = 'start'; fc.imp = null; fc.error = ''; } log.appendChild(cardsCard()); return; }
     if (py.live) pyMicOff();
     const view = state[lang()].view;
     if (!view.length) { log.appendChild(welcomeCard()); return; }
@@ -2209,7 +2791,15 @@
         im.src = m.img;
         d.appendChild(im);
       }
-      if (m.who === 'tutor') d.onclick = () => speak(m.text, lang(), true);
+      if (m.who === 'tutor') {
+        d.onclick = () => speak(m.text, lang(), true);
+        if (m.text !== '…' && /«/.test(m.text)) {
+          const sb = document.createElement('button');
+          sb.className = 'say'; sb.title = 'Listen'; sb.textContent = '🔊';
+          sb.onclick = e => { e.stopPropagation(); speak(m.text, lang(), true); };
+          d.appendChild(sb);
+        } else d.style.paddingBottom = '12px';
+      }
       if (m.who === 'err' && m.retry && i === view.length - 1) {
         const b = document.createElement('button');
         b.className = 'redo';
@@ -2259,6 +2849,7 @@
       b.style.marginTop = '10px';
       b.textContent = completed[lang()] ? '▶ Next session' : '✔ Finish & go to next session';
       b.onclick = nextSession;
+      if (today.run && completed[lang()]) { b.textContent = 'Next step of today ▶'; b.onclick = () => { Promise.resolve(pendingSave[lang()]).then(todayNext, todayNext); }; }
       done.appendChild(b);
       log.appendChild(done);
     }
@@ -2405,6 +2996,7 @@
     const text = box.value.trim();
     if (!text) return;
     box.value = '';
+    box.style.height = '40px';
     sendText(text);
   }
 
@@ -2724,6 +3316,65 @@
   }
 
   // Check on load and show the banner if permission hasn't been given yet.
+  // ---------- 🎤 Mic test: shows exactly what works and what fails ----------
+  function micTest() {
+    closeProgress();
+    let box = document.getElementById('progress');
+    if (!box) { box = document.createElement('div'); box.id = 'progress'; document.body.appendChild(box); }
+    box.style.display = 'block';
+    const L = langInfo(lang()), code = speechOf(lang());
+    const lines = [];
+    const out = () => {
+      box.innerHTML = '<div class="pcard"><div class="phead"><h3>🎤 Mic test</h3><button class="secondary" id="mtClose">✕</button></div>' +
+        '<div class="mt">' + lines.map(x => '<div>' + x + '</div>').join('') + '</div>' +
+        '<div class="pbtns"><button class="go" id="mtAgain">🎤 Test again</button></div>' +
+        '<div class="sub" style="margin-top:8px">If something is ❌, send a screenshot of this box.</div></div>';
+      box.querySelector('#mtClose').onclick = () => { if (t && t.r) try { t.r.abort(); } catch (e) {} closeProgress(); };
+      box.querySelector('#mtAgain').onclick = micTest;
+    };
+    const t = {};
+    lines.push((IS_PHONE ? '📱 Phone' : '💻 Computer') + ' · ' + escapeHtml((navigator.userAgent.match(/(Chrome|CriOS|Firefox|Edg|Safari)\/[\d.]+/) || ['unknown browser'])[0]) + ' · v' + APP_VERSION);
+    lines.push(SR ? '✅ Speech recognition is available' : '❌ This browser has no speech recognition — use Chrome (or Edge on a computer)');
+    lines.push(location.protocol === 'https:' ? '✅ Secure page (https)' : '❌ Not https — the mic only works on https pages');
+    if (IS_PHONE && stripOn) lines.push('⚠ Pitch mode was ON (mic only drew pitch). Switched back to answering.');
+    if (IS_PHONE && stripOn) { stripOn = false; showStrip(); idleMicHint(); }
+    out();
+    const perm = navigator.permissions && navigator.permissions.query ? navigator.permissions.query({ name: 'microphone' }).then(x => x.state).catch(() => 'unknown') : Promise.resolve('unknown');
+    perm.then(st => {
+      lines.push(st === 'granted' ? '✅ Microphone permission: allowed' : st === 'denied' ? '❌ Microphone permission: BLOCKED — tap 🔒 next to the address bar → Permissions → Microphone → Allow, then reload'
+        : '⚠ Microphone permission: not decided yet (' + st + ') — the browser will ask; tap Allow');
+      if (!SR) { out(); return; }
+      lines.push('🗣 Now say a short sentence in ' + escapeHtml(L.name) + ' (listening for 6 seconds)…');
+      lines.push('<span id="mtLive" class="sub">waiting for sound…</span>');
+      out();
+      speechSynthesis.cancel();
+      const r = new SR(); t.r = r;
+      r.lang = code; r.interimResults = true; r.continuous = true;
+      let heard = '', audio = false, speech = false, err = '';
+      r.onaudiostart = () => { audio = true; const e = document.getElementById('mtLive'); if (e) e.textContent = '🔴 mic is on — speak now'; };
+      r.onspeechstart = () => { speech = true; };
+      r.onresult = e => { heard = joinResults(e.results); const x = document.getElementById('mtLive'); if (x) x.textContent = '👂 ' + heard; };
+      r.onerror = e => { err = e.error; };
+      const stopT = setTimeout(() => { try { r.stop(); } catch (e) {} }, 6000);
+      r.onend = () => {
+        clearTimeout(stopT);
+        lines.pop(); lines.pop();
+        lines.push(audio ? '✅ The mic turned on' : '❌ The mic never turned on' + (err ? ' (' + err + ')' : ''));
+        if (heard) lines.push('✅ Heard you: “' + escapeHtml(heard) + '” — the mic works for answers');
+        else lines.push('❌ Nothing was recognised' + (err ? ' — error: <b>' + escapeHtml(err) + '</b>' : '') + '. ' + ({
+          'not-allowed': 'The microphone is blocked for this site (see permission above).',
+          'service-not-allowed': 'Speech recognition is turned off on this device/browser. Android: Settings → Apps → Google → enable “Speech Recognition and synthesis”; make sure the Google app is up to date.',
+          'audio-capture': 'Another app or tab is using the microphone, or no mic is selected. Close other apps using the mic and try again.',
+          'network': 'Speech recognition needs internet — check the connection.',
+          'language-not-supported': L.name + ' recognition isn\'t installed. Android: Google app → Settings → Voice → Languages → add ' + L.name + '.',
+          'no-speech': speech ? 'Sound was detected but not words — speak louder and closer.' : 'No speech detected — check the mic isn\'t muted and speak a bit louder.'
+        }[err] || (audio ? 'Speak a little louder and closer to the phone.' : 'The browser did not start the mic.')));
+        out();
+      };
+      try { r.start(); } catch (e) { lines.push('❌ Could not start: ' + escapeHtml(e.message)); out(); }
+    });
+  }
+
   async function checkMic() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       micBanner('This browser can\'t use the microphone here. Open the tutor link in Chrome.' + FALLBACK, false);
@@ -2755,6 +3406,7 @@
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(t => t.stop()); // we only needed the permission
+      if (IS_PHONE) await new Promise(r => setTimeout(r, 400)); // phones need a moment to free the mic for recognition
       micReady = true;
       hideMicBanner();
       return true;
@@ -2807,8 +3459,7 @@
 
   function idleMicHint() {
     if (rec) return;
-    document.getElementById('input').placeholder = IS_PHONE && stripOn ? '〰 Pitch mode: tap 🎤' : IS_PHONE ? (holdMode() ? 'Hold 🎤 or type…' : 'Type or tap 🎤…')
-      : holdMode() ? 'Hold 🎤 while you speak, release to send — or type…' : 'Type or speak…';
+    document.getElementById('input').placeholder = IS_PHONE && stripOn ? '〰 Pitch mode: tap 🎤' : holdMode() ? 'Type, or hold 🎤 to speak' : 'Type, or tap 🎤 to speak';
     document.getElementById('mic').title = holdMode() ? 'Hold to talk, release to send' : 'Tap to talk';
   }
 
