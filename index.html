@@ -173,7 +173,7 @@
     .seg { display: flex; gap: 6px; margin: 6px 0 10px; flex-wrap: wrap; }
     .seg button { flex: 1 1 140px; background: #f1f3f4; color: var(--ink); border-radius: 12px; font-size: 13px; padding: 8px; }
     .seg button.on { background: var(--blue-l); color: var(--blue-d); box-shadow: inset 0 0 0 1.5px var(--blue); }
-    .fcdel { background: none; color: var(--ink2); padding: 0 4px; font-size: 14px; }
+    .fcdel { background: #fce8e6; color: #a50e0e; border-radius: 14px; padding: 5px 10px; font-size: 13px; margin-left: 6px; }
     .fcmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 6px 0; }
     .fcmap label { font-size: 12px; color: var(--ink2); display: flex; flex-direction: column; gap: 3px; }
     .fcmap select { font-size: 14px; padding: 6px; border-radius: 8px; border: 1px solid var(--line); }
@@ -2127,7 +2127,7 @@
       '<div class="seg"><button data-d="recognize" class="' + (fc.dir === 'recognize' ? 'on' : '') + '">👀 See word → recall meaning</button><button data-d="produce" class="' + (fc.dir === 'produce' ? 'on' : '') + '">🗣 See meaning → say the word</button></div>' +
       '<button class="go" id="fcGo"' + (total ? '' : ' disabled') + '>' + (total ? '▶ Study ' + total + ' cards' : '✅ All done for today') + '</button>' +
       (!total ? '<div class="sub" style="margin-top:6px">' + (newLeft ? 'Come back tomorrow, or raise the new cards per day below.' : d.decks.length ? 'All caught up! 🎉 Import another deck for more words.' : 'Import a deck to get started.') + '</div>' : '') +
-      '<h4>Your decks</h4>' + (d.decks.length ? d.decks.map(x => '<div class="trow"><span>📚 ' + escapeHtml(x.name) + '</span><span><b>' + (x.total - x.left) + '</b> / ' + x.total + ' learned <button class="fcdel" data-deck="' + escapeHtml(x.name) + '" title="Remove deck">🗑</button></span></div>').join('')
+      '<h4>Your decks</h4>' + (d.decks.length ? d.decks.map(x => '<div class="trow"><span>📚 ' + escapeHtml(x.name) + '</span><span><b>' + (x.total - x.left) + '</b> / ' + x.total + ' learned <button class="fcdel" data-deck="' + escapeHtml(x.name) + '" title="Remove deck">🗑 Remove</button></span></div>').join('')
         : '<div class="sub">No decks yet. Words the tutor teaches you appear here as reviews too.</div>') +
       '<label class="lbl">New cards per day</label><select id="fcPer" class="txt">' + [0, 5, 10, 15, 20, 30, 50].map(v => '<option' + (v === d.perDay ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>' +
       '<div class="pybtns"><button class="secondary" id="fcImp">📥 Import Anki deck (.apkg)</button></div>' +
@@ -2140,7 +2140,12 @@
     q('#fcFile').onchange = e => fcImportFile(e.target.files[0]);
     div.querySelectorAll('.fcdel').forEach(b => b.onclick = () => {
       if (!confirm('Remove the deck “' + b.dataset.deck + '”? Words you already studied stay in your vocabulary.')) return;
-      call('deleteDeck', l, b.dataset.deck).then(x => { fc.data = x; renderCards(); }).catch(showApiError);
+      b.disabled = true; b.textContent = 'Removing…';
+      call('deleteDeck', l, b.dataset.deck).then(x => {
+        fc.data = x; renderCards();
+        toast(x.removed ? '🗑 Removed “' + b.dataset.deck + '” (' + x.removed + ' cards)' : 'That deck was already removed.');
+        today.data = null; // the Today plan recounts the cards
+      }).catch(err => { b.disabled = false; b.textContent = '🗑 Remove'; toast('⚠ Could not remove the deck: ' + err.message, true); });
     });
     return div;
   }
@@ -2691,7 +2696,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-30-cardsnav';
+  const APP_VERSION = '2026-10-30-deldeck';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
