@@ -158,7 +158,9 @@
     .pyverdict.good { color: #137333; }
     .pyb { display: grid; grid-template-columns: 90px 1fr 44px; gap: 8px; align-items: center; font-size: 13px; }
     .pyb .bar100 { margin: 0; }
-.fcword { font-size: 40px; text-align: center; margin: 18px 0 6px; font-weight: 500; word-break: break-word; }
+.fcnav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .fcnav .pill:disabled { opacity: .4; }
+    .fcword { font-size: 40px; text-align: center; margin: 18px 0 6px; font-weight: 500; word-break: break-word; }
     .fcread { font-size: 20px; text-align: center; color: var(--blue-d); }
     .fcmean { font-size: 19px; text-align: center; margin: 10px 0; line-height: 1.4; }
     .fcback { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 6px; }
@@ -449,7 +451,17 @@
 
   // Network failures ("Failed to fetch") are retried once after a short wait; if it still fails,
   // a quick ping tells apart "no internet / wrong link" from "the server had a problem with this request".
-  function call(fn, ...args) {
+  // A page newer than the server: say exactly what to do instead of "Unknown function".
+  function oldServer(err) {
+    if (err && /Unknown function/i.test(err.message || '')) {
+      const e = new Error('The Apps Script server is an older version than this page. In Apps Script: paste the new Code.gs, then Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy, and run Language Tutor → Set up sheets once.');
+      e.oldServer = true;
+      throw e;
+    }
+    throw err;
+  }
+  function call(fn, ...args) { return call_(fn, args).catch(oldServer); }
+  function call_(fn, args) {
     if (IN_GOOGLE) {
       return new Promise((resolve, reject) =>
         google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(fn, args));
@@ -1935,21 +1947,49 @@
   function fcStart() {
     const cards = (fc.data && fc.data.cards || []).slice();
     // reviews first, then new ones mixed in
-    fc.queue = cards; fc.idx = 0; fc.shown = false; fc.results = []; fc.saved = 0; fc.again = new Set(); fc.check = null; fc.micError = '';
+    fc.queue = cards; fc.idx = 0; fc.shown = false; fc.results = []; fc.saved = 0; fc.again = new Set(); fc.check = null; fc.micError = ''; fc.hist = []; fc.revisit = null;
     fc.screen = 'study'; renderCards();
     const c = fc.queue[0]; if (c && fc.dir === 'recognize') fcSay(c.w);
   }
 
   function fcGrade(q) {
-    const c = fc.queue[fc.idx];
-    if (!fc.again.has(c.w + '|' + c.kind)) fc.results.push({ w: c.w, r: c.r, m: c.m, kind: c.kind, q: q }); // the first answer is what counts
-    if (q < 3 && !fc.again.has(c.w + '|' + c.kind)) { fc.again.add(c.w + '|' + c.kind); fc.queue.push(c); } // see it again at the end
+    const c = fc.queue[fc.idx], key = c.w + '|' + c.kind;
+    const h = { idx: fc.idx, res: fc.results.length, againAdded: false, q: q };
+    if (fc.revisit && fc.revisit.ri != null && fc.revisit.ri >= fc.saved) fc.results[fc.revisit.ri].q = q; // changed your answer on a card you went back to
+    else if (!fc.again.has(key)) fc.results.push({ w: c.w, r: c.r, m: c.m, kind: c.kind, q: q }); // the first answer is what counts
+    if (q < 3 && !fc.again.has(key)) { fc.again.add(key); fc.queue.push(c); h.againAdded = true; } // see it again at the end
+    h.resAfter = fc.results.length;
+    fc.hist.push(h); fc.revisit = null;
     fc.idx++; fc.shown = false; fc.check = null; fc.micError = '';
-    if (fc.results.length - fc.saved >= 10) fcSave();
+    if (fc.results.length - fc.saved >= 15) fcSave(); // save in batches (the last few stay editable with ← Back)
     if (fc.idx >= fc.queue.length) { fcSave(true); return; }
+    fcSaveLater();
     renderCards();
     const n = fc.queue[fc.idx]; if (n && fc.dir === 'recognize') fcSay(n.w);
   }
+
+  // ← Back: show the previous card again (answer revealed). If its grade isn't saved yet you can change it.
+  function fcBack() {
+    const h = fc.hist && fc.hist.pop();
+    if (!h) return;
+    const c = fc.queue[h.idx];
+    if (h.againAdded) { fc.queue.pop(); fc.again.delete(c.w + '|' + c.kind); }
+    let ri = null;
+    if (h.resAfter > h.res) { ri = h.res; if (ri >= fc.saved) { fc.results.splice(ri, 1); ri = null; } } // unsaved → undo it completely
+    fc.idx = h.idx; fc.shown = true; fc.check = null; fc.micError = '';
+    fc.revisit = { ri: ri, saved: h.resAfter > h.res && h.res < fc.saved, q: h.q };
+    renderCards(); fcSay(c.w);
+  }
+  // End the session early: save what you did and go back to the menu you came from.
+  function fcExit() {
+    if (fc.rec) try { fc.rec.abort(); } catch (e) {}
+    clearTimeout(fc.saveTimer);
+    const done = fc.results.length;
+    if (done && fc.results.length > fc.saved) fcSave();
+    if (today.run) { todayNext(); return; }
+    fc.screen = 'start'; if (done) toast('💾 Saved ' + done + ' cards'); fcLoad();
+  }
+  function fcSaveLater() { clearTimeout(fc.saveTimer); fc.saveTimer = setTimeout(() => { if (fc.screen === 'study' && fc.results.length > fc.saved) fcSave(); }, 120000); }
 
   function fcSave(finish) {
     const batch = fc.results.slice(fc.saved);
@@ -2041,7 +2081,10 @@
       const back = '<div class="fcback">' + (produce ? '<div class="fcword">' + escapeHtml(c.w) + '</div>' : '') +
         (c.r ? '<div class="fcread">' + escapeHtml(c.r) + '</div>' : '') + (!produce ? '<div class="fcmean">' + escapeHtml(c.m) + '</div>' : '') + '</div>';
       const chk = fc.check;
-      div.innerHTML = '<div class="pyhead"><b>🃏 ' + (c.kind === 'new' ? '<span class="fcnew">NEW</span> ' + escapeHtml(c.deck || '') : 'Review') + '</b><span class="sub">' + Math.min(fc.idx + 1, n) + ' / ' + n + '</span></div>' +
+      div.innerHTML = '<div class="fcnav"><button class="pill" id="fcPrev"' + (fc.hist && fc.hist.length ? '' : ' disabled') + '>← Back</button>' +
+          '<span class="sub">' + Math.min(fc.idx + 1, n) + ' / ' + n + '</span><button class="pill" id="fcExit">' + (today.run ? 'Skip ▶' : '✕ End') + '</button></div>' +
+        '<div class="pyhead"><b>🃏 ' + (c.kind === 'new' ? '<span class="fcnew">NEW</span> ' + escapeHtml(c.deck || '') : 'Review') + '</b>' +
+          (fc.revisit ? '<span class="sub">↩ going back' + (fc.revisit.saved ? ' — already saved' : ' — pick again') + '</span>' : '') + '</div>' +
         '<div class="bar100"><div style="width:' + Math.round(100 * fc.idx / n) + '%"></div></div>' +
         front + (fc.shown ? back : '') +
         (chk ? '<div class="pyverdict ' + (chk.score >= 0.85 ? 'good' : '') + '">' + (chk.score >= 0.85 ? '✅ Correct!' : chk.score >= 0.6 ? '🟡 Close' : '❌ Not quite') + '</div><div class="sub" style="text-align:center">I heard: ' + escapeHtml(chk.heard || '—') + '</div>' : '') +
@@ -2052,7 +2095,13 @@
             '<button class="secondary" id="fcMic">' + (fc.listening ? '🔴 Listening…' : '🎤 Say it') + '</button>' +
             '<button class="secondary" id="fcHear">🔊</button>') + '</div>' +
         '<div class="sub" style="text-align:center;margin-top:8px">' + (fc.shown ? 'How well did you remember it?' : produce ? 'Say the word, or tap Show answer.' : 'Say the word aloud and recall its meaning, then tap Show answer.') + '</div>';
-      if (fc.shown) div.querySelectorAll('.grade').forEach(b => b.onclick = () => fcGrade(Number(b.dataset.q)));
+      q('#fcPrev').onclick = fcBack;
+      q('#fcExit').onclick = () => { if (!fc.results.length || confirm('End this session? Your answers so far are saved.')) fcExit(); };
+      if (fc.shown && fc.revisit && fc.revisit.saved) { // already saved: just look, then carry on
+        const pb = div.querySelector('.pybtns');
+        pb.innerHTML = '<button class="go" id="fcFwd">Next →</button>';
+        q('#fcFwd').onclick = () => { const c2 = fc.queue[fc.idx]; fc.hist.push({ idx: fc.idx, res: fc.results.length, resAfter: fc.results.length, againAdded: false }); fc.revisit = null; fc.idx++; fc.shown = false; if (fc.idx >= fc.queue.length) { fcSave(true); return; } renderCards(); if (fc.dir === 'recognize') fcSay(fc.queue[fc.idx].w); };
+      } else if (fc.shown) div.querySelectorAll('.grade').forEach(b => b.onclick = () => fcGrade(Number(b.dataset.q)));
       else {
         q('#fcShow').onclick = () => { fc.shown = true; renderCards(); fcSay(c.w); };
         q('#fcHear').onclick = () => fcSay(produce && !fc.shown ? '' : c.w);
@@ -2642,7 +2691,7 @@
   // ---------- Saved settings ----------
 
   let me = null; // the signed-in learner
-  const APP_VERSION = '2026-10-30-today';
+  const APP_VERSION = '2026-10-30-cardsnav';
 
   function startApp() {
     try { const last = localStorage.getItem('tutorLang'); if (last) document.getElementById('lang').value = last; } catch (e) {}
